@@ -1,0 +1,159 @@
+#include <iostream>
+#include <vector>
+#include <set>
+
+// compile on mac
+// g++ -std=c++11 main.cpp -o main.out 
+
+
+/* ===== Production ===== */
+struct Production {
+    char from;      // non-terminal
+    char terminal;  // terminal
+    char to;        // non-terminal or '\0'
+};
+
+/* ===== Grammar ===== */
+class Grammar {
+private:
+    std::set<char> Vn;               // non-terminals (unique automatically)
+    std::set<char> Vt;               // terminals
+    std::vector<Production> P;       // productions
+    char S;                          // start symbol
+
+public:
+    // constructor
+    Grammar(char startSymbol) : S(startSymbol) {}
+
+    bool isNonTerminal(char c) const {
+        return Vn.find(c) != Vn.end();
+    }
+
+
+    // add non-terminal
+    void addNonTerminal(char nt) {
+        Vn.insert(nt);
+    }
+
+    const std::vector<Production>& getProductions() const {
+        return P;
+    }
+
+    // add terminal
+    void addTerminal(char t) {
+        Vt.insert(t);
+    }
+
+    // add production
+    void addProduction(char from, char terminal, char to = '\0') {
+        P.push_back({from, terminal, to});
+    }
+
+    // print grammar, helper function
+    void print() const {
+        std::cout << "VN = { ";
+        for (char c : Vn) std::cout << c << " ";
+        std::cout << "}\n";
+
+        std::cout << "VT = { ";
+        for (char c : Vt) std::cout << c << " ";
+        std::cout << "}\n";
+
+        std::cout << "P:\n";
+        for (const auto &prod : P) {
+            std::cout << "  " << prod.from << " -> " << prod.terminal;
+            if (prod.to != '\0') std::cout << prod.to;
+            std::cout << "\n";
+        }
+
+        std::cout << "S = " << S << "\n";
+    }
+};
+
+
+
+
+
+
+class ValidWordGenerator {
+private:
+    const Grammar* g;
+    char start;
+
+public:
+    ValidWordGenerator(char S, const Grammar* grammar)
+        : g(grammar), start(S) {}
+
+    void generate(size_t maxSteps = 10) {
+        std::stack<std::string> st;
+        st.push(std::string(1, start));
+
+        while (!st.empty()) {
+            std::string cur = st.top();
+            st.pop();
+
+            if (cur.size() > maxSteps)
+                continue;
+
+            char last = cur.back();
+
+            // нет нетерминалов → готовое слово
+            if (!g->isNonTerminal(last)) {
+                std::cout << cur << "\n";
+                continue;
+            }
+
+
+            // применяем все продукции для последнего нетерминала
+            for (const auto& p : g->getProductions()) {
+                if (p.from != last)
+                    continue;
+
+                std::string next = cur.substr(0, cur.size() - 1);
+                next += p.terminal;
+
+                if (p.to != '\0')
+                    next += p.to;
+
+                st.push(next);
+            }
+        }
+    }
+};
+
+
+
+
+
+
+/* ===== Main ===== */
+int main() {
+    Grammar g('S');
+
+    /* VN */
+    g.addNonTerminal('S');
+    g.addNonTerminal('A');
+    g.addNonTerminal('B');
+    g.addNonTerminal('C');
+
+    /* VT */
+    g.addTerminal('a');
+    g.addTerminal('b');
+    g.addTerminal('c');
+    g.addTerminal('d');
+
+    /* P (Variant 20) */
+    g.addProduction('S', 'd', 'A');
+    g.addProduction('A', 'd');
+    g.addProduction('A', 'a', 'B');
+    g.addProduction('B', 'b', 'C');
+    g.addProduction('C', 'c', 'A');
+    g.addProduction('C', 'a', 'S');
+
+    g.print();
+
+    ValidWordGenerator generator('S', &g);
+    generator.generate();
+
+    return 0;
+}
