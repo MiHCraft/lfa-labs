@@ -140,7 +140,7 @@ int main() {
 
 ---
 
-## Conclusions / Screenshots / Results
+## Conclusions / Results
 
 The generated words were successfully recognized by the constructed finite automaton, confirming the correctness of the grammar-to-automaton conversion.
 
@@ -162,16 +162,6 @@ This demonstrates that:
     
 -   The implementation proves the theoretical equivalence between regular grammars and finite automata.
     
-
----
-
-## References
-
-1.  Hopcroft, J., Motwani, R., Ullman, J. – *Introduction to Automata Theory, Languages, and Computation*
-    
-2.  Course materials – Formal Languages & Finite Automata
-    
-3.  Laboratory guidelines provided by the instructor
     
 
----
+
