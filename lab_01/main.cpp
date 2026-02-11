@@ -281,6 +281,7 @@ class Converter {
 int main() {
     Grammar g("S");
 
+    // variant 20
     g.addNonTerminal("S");
     g.addNonTerminal("A");
     g.addNonTerminal("B");
