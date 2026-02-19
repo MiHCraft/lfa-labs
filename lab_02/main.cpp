@@ -15,7 +15,7 @@
 // compile commamd, use the last version of c++
 // g++ -std=c++23 main.cpp -o main.out
 
-
+// We use an OOP style when all the classes store other objects (aka. composition) by pointers. And all the objects are stoted in RAM. Why this choice? Because it is easy for me to write.
 
 
 // The grammar has nonterminal symbols, terminal symbols, rule of productions and a starting symbol.
@@ -87,35 +87,79 @@ public:
 			letter->print();
 		}
 	}
+
+	// says if this words ends with a given word
+	bool endsWith(Word* givenWord) const{
+	// return back later
+
+		if (word.size() < givenWord->word.size())
+            return false;
+
+        size_t offset = word.size() - givenWord->word.size();
+
+        for (size_t i = 0; i < givenWord->word.size(); ++i) {
+            if (word[offset + i] != givenWord->word[i])
+                return false;
+        }
+
+        return true;
+	}
+
 };
 
 
 class Prodution {
 private:
-	std::unique_ptr<Word> from;
-	std::unique_ptr<Word> to;
+	Word* from;
+	Word* to;
 public:
-	Production(std::unique_ptr<Word> from, std::unique_ptr<Word> to){
-		this->from = std::move(from);
-		this->to = std::move(to);
+	Production(Word* from, Word* to){
+		this->from = from;
+		this->to = to;
 	}
 
 	void print() const{
-		from->print();
-		printf(" -> ");
-		to->print();
+		this->from->print();
+		this->printf(" -> ");
+		this->to->print();
 		printf(";\n");
+	}
+
+	bool canApplyRight(const Word* word){
+		if (word->endsWith(this->from)){
+			return true;
+		}
+		return false;
+	}
+
+	Word* applyRight(constWord* word){
+
 	}
 }
 
 class Grammar {
 private:
-	std::set<Terminal> terminals;
-	std::set<NonTerminal> nonTerminals;
-	std::set<Production> productions;
-	NonTerminal startingSymbol;
+	std::vector<Terminal*> terminals;
+	std::vector<NonTerminal*> nonTerminals;
+	std::vector<Production*> productions;
+	NonTerminal* startingSymbol;
 public:
-	
+	// the Constructor in previous version has been accepting the starting symbol. So, for now just use this.
+	Grammar(NonTerminal* startingSymbol){
+		this->startingSymbol = startingSymbol;
+	}
+
+	// Expand Right is an operation that returns the set of all possible expansions from current word to another word.
+	std::vector<Word*> expandRight(Word* currentWord) const{
+		std::vector<Word*> resultingWords;
+		for (const auto& p : productions){
+			
+			// will return later soon
+
+
+		}
+
+	}
 }
 
 
