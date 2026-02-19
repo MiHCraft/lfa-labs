@@ -10,35 +10,29 @@
 #include <queue> // this is already implemented queue for some alggorithms.
 #include <string> // just to not to use array of characters.
 #include <cstdio> // ChatGPT said that it is important for printf, on other OS it might not work without it.
+#include <memory> // chatGPT said that this is important for unique_ptr, which are some sort of smart pointers
 
 // compile commamd, use the last version of c++
 // g++ -std=c++23 main.cpp -o main.out
 
 
 
-/* ===== Production ===== */
-// Use struct because it is a poor data object.
-struct Production {
-    std::string from;   // left side (non-terminal)
-    std::string to;     // right side (string of terminals + optional non-terminal)
-};
-
-
-// new attempt to implement the grammar.
 
 // The grammar has nonterminal symbols, terminal symbols, rule of productions and a starting symbol.
 // so, it has symbols and a productions.
 // while the production is a set of 2 words. from the what word we go to what word.
 //
-// Firstly, we have a letter.
-
-class Letter {
-private:
+// Firstly, we have a letter. A Letter is an abstract class, as there are only 2 types of Letters: terminal and non-terminal.
+class AbstractLetter {
+protected:
 	char letter;
 public:
-	Letter(char letter){
+	AbstractLetter(char letter){
 		this->letter = letter;
 	}
+
+	virtual ~AbstractLetter() {}
+
 	void setLetter(char letter) {
 		this->letter = letter;
 	}
@@ -50,48 +44,78 @@ public:
 	void print() const {
 		printf("%c", letter);
 	}
+
+	// This method is fully virtual, that makes this class Abstract.
+	virtual bool isTerminal() const = 0;
 };
 
-class Terminal : Letter {
+class Terminal : public AbstractLetter {
+public:
+	Terminal(char letter) : AbstractLetter(letter) {}
 
-
-}
-
-class NonTerminal : Letter {
-
-
-}
-
-class Produtction {
-private:
-	Word from;
-	Word to;
-Public:
-	Production(Word from, Word to){
-		this->from = from;
-		this->to = to;
+	bool isTerminal() const override {
+		return true;
 	}
-}
+};
+
+class NonTerminal : public AbstractLetter {
+public:
+	NonTerminal(char letter) : AbstractLetter(letter) {}
+
+	bool isTerminal() const override {
+		return false;
+	}
+};
+
 
 class Word {
 private:
-	std::vector<Letter> word;
+	std::vector<AbstractLetter*> word;
 public:
-	void appendLetter(const Letter &letter){
+	void appendLetter(AbstractLetter* letter){
 		word.push_back(letter);
+	}
+	
+	bool containsTerminal() const {
+		for (const auto& letter : word)
+            		if (letter->isTerminal()) return true;
+        	return false;
 	}
 
 	void print() const {
-		for (const Letter &letter : word) {
-			letter.print();
+		for (const auto& letter : word) {
+			letter->print();
 		}
 	}
 };
 
-class Grammar_01 {
-private:
-	
 
+class Prodution {
+private:
+	std::unique_ptr<Word> from;
+	std::unique_ptr<Word> to;
+public:
+	Production(std::unique_ptr<Word> from, std::unique_ptr<Word> to){
+		this->from = std::move(from);
+		this->to = std::move(to);
+	}
+
+	void print() const{
+		from->print();
+		printf(" -> ");
+		to->print();
+		printf(";\n");
+	}
+}
+
+class Grammar {
+private:
+	std::set<Terminal> terminals;
+	std::set<NonTerminal> nonTerminals;
+	std::set<Production> productions;
+	NonTerminal startingSymbol;
+public:
+	
 }
 
 
