@@ -201,6 +201,14 @@ public:
 		}
 	}
 
+	Word* getFrom() const {
+		return this->from.get();
+	}
+
+	Word* getTo() const {
+		return this->to.get();
+	}
+
 	std::unique_ptr<Word> applyRightNew(const Word* oldWord) const{
 		std::unique_ptr<Word> newWord = std::make_unique<Word>(*oldWord);
 		this->applyRight(newWord.get());
@@ -245,9 +253,47 @@ public:
 	void addProduction(std::unique_ptr<Production> production){
 		this->productions.push_back(std::move(production));
 	}
+	std::vector<const Production*> getProductions() const{
+		std::vector<const Production*> result;
+		result.reserve(this->terminals.size());
 
-	const NonTerminal* getStartingSymbol() const{
+		for (const std::unique_ptr<Production>& pr : this->productions){
+			result.push_back(pr.get());
+		}
+
+		return result;
+	}
+
+	const NonTerminal* getStartingSymbol() const {
 		return startingSymbol;
+	}
+
+	std::vector<const NonTerminal*> getNonTerminals() const {
+		std::vector<const NonTerminal*> result;
+		result.reserve(this->nonTerminals.size());
+
+		for (const std::unique_ptr<NonTerminal>& nt : this->nonTerminals){
+			result.push_back(nt.get());
+		}
+
+		return result;
+	}
+
+	std::vector<const Terminal*> getTerminals() const {
+		std::vector<const Terminal*> result;
+		result.reserve(this->terminals.size());
+
+		for (const std::unique_ptr<Terminal>& t : this->terminals){
+			result.push_back(t.get());
+		}
+
+		return result;
+	}
+
+	std::string getStartingSymbolName() const {
+		std::string resultingString = "";
+		resultingString += startingSymbol->getLetter();
+		return resultingString;
 	}
 };
 
@@ -284,7 +330,7 @@ public:
 			queue.pop(); // delete just getted value from queue
 			if (this->alreadySeen(current.get(), seen))
 				continue;
-			if (current->containsNonTerminal() == true){
+			if (current->containsNonTerminal() == false){
 				result.push_back(std::make_unique<Word>(*current.get()));
 				generated++;
 			}
@@ -303,220 +349,358 @@ public:
 
 
 
+// Automaton. Can be finite and non-finite.
+// Will be just one Class of Automaton and a bool function to answer the question if this is a finite or not.
 
-///* ===== Finite Automaton ===== */
-//class FiniteAutomaton {
-//public:
-    //using State = std::string;
-//
-    //struct Transition {
-        //State from;
-        //char  symbol;
-        //State to;
-    //};
-//
-//private:
-    //std::set<State> states;          // Q
-    //std::set<char> alphabet;         // Σ
-    //std::vector<Transition> delta;   // δ
-    //State start;                     // q0
-    //std::set<State> finals;          // F
-//
-//public:
-    //FiniteAutomaton(const State& startState)
-        //: start(startState)
-    //{
-        //states.insert(start);
-    //}
-//
-    //void addState(const State& s) {
-        //states.insert(s);
-    //}
-//
-    //void addFinalState(const State& s) {
-        //states.insert(s);
-        //finals.insert(s);
-    //}
-//
-    //void addSymbol(char c) {
-        //alphabet.insert(c);
-    //}
-//
-    //void addTransition(const State& from, char symbol, const State& to) {
-        //states.insert(from);
-        //states.insert(to);
-        //alphabet.insert(symbol);
-        //delta.push_back({from, symbol, to});
-    //}
-//
-    //const State& getStart() const {
-        //return start;
-    //}
-//
-    //const std::set<State>& getStates() const {
-        //return states;
-    //}
-//
-    //const std::set<State>& getFinalStates() const {
-        //return finals;
-    //}
-//
-    //const std::vector<Transition>& getTransitions() const {
-        //return delta;
-    //}
-//
-    //bool accepts(const std::string& word) const {
-        //std::set<State> current;
-        //current.insert(start);
-//
-        //for (char c : word) {
-            //std::set<State> next;
-//
-            //for (const auto& s : current) {
-                //for (const auto& tr : delta) {
-                    //if (tr.from == s && tr.symbol == c) {
-                        //next.insert(tr.to);
-                    //}
-                //}
-            //}
-//
-            //if (next.empty()) return false;
-//
-            //current = std::move(next);
-        //}
-//
-        //for (const auto& s : current) {
-            //if (finals.count(s)) return true;
-        //}
-//
-        //return false;
-    //}
-//
-//
-    //void print() const {
-        //std::cout << "States: { ";
-        //for (const auto& s : states) std::cout << s << " ";
-        //std::cout << "}\n";
-//
-        //std::cout << "Alphabet: { ";
-        //for (char c : alphabet) std::cout << c << " ";
-        //std::cout << "}\n";
-//
-        //std::cout << "Start: " << start << "\n";
-//
-        //std::cout << "Final states: { ";
-        //for (const auto& s : finals) std::cout << s << " ";
-        //std::cout << "}\n";
-//
-        //std::cout << "Transitions:\n";
-        //for (const auto& t : delta) {
-            //std::cout << "  " << t.from << " --" << t.symbol << "--> " << t.to << "\n";
-        //}
-    //}
-//};
-//
-//
-//class Converter {
-//
-    //public:
-        //FiniteAutomaton grammarToFiniteAutomaton(Grammar *g){
-            //const std::string FINAL = "__FINAL__";
-//
-            //FiniteAutomaton fa(g->getStart());
-//
-            //fa.addFinalState(FINAL);
-//
-            //for (const auto& p : g->getProductions()) {
-//
-                //const std::string& from = p.from;
-                //const std::string& rhs  = p.to;
-//
-                //if (rhs.empty()) continue;
-//
-                //char terminal = rhs[0];
-//
-                //// Case 1: A -> a
-                //if (rhs.size() == 1) {
-                    //fa.addTransition(from, terminal, FINAL);
-                //}
-                //// Case 2: A -> aB
-                //else {
-                    //std::string to = rhs.substr(1);
-                    //fa.addTransition(from, terminal, to);
-                //}
-            //}
-//
-            //return fa;
-        //}
-//};
-//
+// Automaton has States, Alphabet, Transition function (State x alphabet -> state)
+class State {
+private:
+	std::string nameOfState;
+public:
+	State(std::string name){
+		this->nameOfState = name;
+	}
+
+	bool isName(std::string name){
+		return this->nameOfState == name;
+	}
+};
+
+class Symbol {
+private:
+	std::string nameOfSymbol;
+public:
+	Symbol(std::string name){
+		this->nameOfSymbol = name;
+	}
+	std::string getNameOfSymbol() const{
+		return this->nameOfSymbol;
+	}
+	bool isName(std::string name) const {
+		return this->nameOfSymbol == name;
+	}
+};
+class Transition {
+private:
+	const State* stateFrom;
+	const Symbol* viaSymbol;
+	const State* stateTo;
+public:
+	Transition(const State* from, const Symbol* via, const State* to){
+		this->stateFrom = from;
+		this->viaSymbol = via;
+		this->stateTo = to;
+	}
+	bool isFromStateAndViaSymbol(const State* from,const Symbol* symbol) const {
+		if (this->stateFrom == from && this->viaSymbol->getNameOfSymbol() == symbol->getNameOfSymbol())
+			return true;
+		return false;
+	}
+	const State* getToState() const{
+		return stateTo;
+	}
+};
+
+
+
+class Automaton {
+private:
+	std::vector<std::unique_ptr<State>> states;
+	std::vector<std::unique_ptr<Symbol>> alphabet;
+	std::vector<std::unique_ptr<Transition>> transitions;
+	const State* startingState;
+	std::vector<const State*> finalStates;
+
+	bool containsState(const State* state) const {
+		for (const std::unique_ptr<State>& st: this->states){
+			if (st.get() == state){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool isFinalState(const State* state) const {
+		for (const State* const& st : this->finalStates){
+			if (st == state){
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool containsSymbol(const Symbol* symbol) const {
+		for (const std::unique_ptr<Symbol>& sy : this->alphabet){
+			if (sy.get() == symbol) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool containsTransition(const Transition* transition) const {
+		for (const std::unique_ptr<Transition>& tr : this->transitions){
+			if (tr.get() == transition) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+public:
+	Automaton(std::unique_ptr<State> start){
+		this->startingState = start.get();
+		this->states.push_back(std::move(start));
+	}
+	
+	void addState(std::unique_ptr<State> state){
+		if(!this->containsState(state.get()))
+			this->states.push_back(std::move(state));
+	}
+
+	void setStateAsFinal(const State* finalState) {
+		if(this->containsState(finalState) && !this->isFinalState(finalState)){
+			finalStates.push_back(finalState);
+		}
+	}
+
+	void addFinalState(std::unique_ptr<State> state) {
+		const State* state_ptr = state.get();
+		this->addState(std::move(state));
+		this->setStateAsFinal(state_ptr);
+	}
+
+	void addSymbol(std::unique_ptr<Symbol> symbol) {
+		if (!this->containsSymbol(symbol.get()))
+			this->alphabet.push_back(std::move(symbol));
+	}
+
+	void addTransition(std::unique_ptr<Transition> transition){
+		if (!this->containsTransition(transition.get()))
+			this->transitions.push_back(std::move(transition));
+	}
+
+	bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const{
+		std::vector<const State*> currentStates;
+		currentStates.push_back(this->startingState);
+
+		for (const std::unique_ptr<Symbol>& symbol : word){
+			std::vector<const State*> nextStates;
+
+			for (const State*& s : currentStates){
+				for (const std::unique_ptr<Transition>& tr : this->transitions){
+					if (tr->isFromStateAndViaSymbol(s, symbol.get())){
+						nextStates.push_back(tr->getToState());
+					}
+				}
+			}
+
+			if (nextStates.empty()) return false;
+			currentStates = std::move(nextStates);
+		}
+
+		for (const State*& st: currentStates){
+			if (this->isFinalState(st)){
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	const State* getStateByName(std::string name){
+		for (std::unique_ptr<State>& state : this->states){
+			if (state->isName(name)){
+				return state.get();
+			}
+		}
+		return nullptr;
+	}
+
+	const Symbol* getSymbolByName(std::string name){
+		for (std::unique_ptr<Symbol>& symbol : this->alphabet){
+			if (symbol->isName(name)){
+				return symbol.get();
+			}
+		}
+		return nullptr;
+	}
+};
+
+
+class ConverterGrammarToAutomaton{
+public:
+	std::unique_ptr<Automaton> convert(const Grammar* grammar) const{
+		// Create final state
+		std::unique_ptr<State> FINAL = std::make_unique<State>("__FINAL__");
+		const State* finalState = FINAL.get();
+		// create Starting state
+		std::unique_ptr<State> startingState = std::make_unique<State>(grammar->getStartingSymbolName());
+
+		// create Automaton itself (and parsing the starting state)
+		std::unique_ptr<Automaton> automaton = std::make_unique<Automaton>(std::move(startingState));
+		// parse the final state;
+		automaton->addFinalState(std::move(FINAL));
+
+		std::vector<const NonTerminal*> nonTerminals = grammar->getNonTerminals();
+
+
+		// NonTerminals are the States;
+		for (const NonTerminal* nt : nonTerminals){
+			std::string st = "";
+			st += nt->getLetter();
+			std::unique_ptr<State> stat = std::make_unique<State>(st);
+			automaton->addState(std::move(stat));
+			//add each nt to states as a state. create new state each time and call function addState();
+		}
+
+		// Terminals are alphabet, nullptr = epsilpn.
+		std::vector<const Terminal*> terminals = grammar->getTerminals();
+		for(const Terminal* t : terminals){
+			std::string st = "";
+			st += t->getLetter();
+			std::unique_ptr<Symbol> sy = std::make_unique<Symbol>(st);
+			automaton->addSymbol(std::move(sy));
+		}
+
+
+		std::vector<const Production*> productions = grammar->getProductions();
+		// Now transform productions to transitions;
+		for (const Production* p : productions) {
+			// get first letter from FROM
+			const Word* wordFrom = p->getFrom();
+			const AbstractLetter* al = wordFrom->getAllLetters()[0];
+			const char fromChar = al->getLetter();
+
+			std::string fromString = "";
+			fromString += fromChar;
+			const State* fromState = automaton->getStateByName(fromString);
+
+			const Word* wordTo = p->getTo();
+			if (wordTo->getLength() == 1 && wordTo->getAllLetters()[0]->isTerminal()){
+				// format A->a
+				char viaChar = wordTo->getAllLetters()[0]->getLetter();
+				std::string viaString = "";
+				viaString += viaChar;
+				const Symbol* symbolVia = automaton->getSymbolByName(viaString);
+				const State* toState = finalState;
+				std::unique_ptr<Transition> transition= std::make_unique<Transition>(fromState, symbolVia, toState);
+				automaton->addTransition(std::move(transition));
+			}
+
+			if (wordTo->getLength() == 2){
+				// format A->aB
+				char viaChar = wordTo->getAllLetters()[0]->getLetter();
+				std::string viaString = "";
+				viaString += viaChar;
+				const Symbol* symbolVia = automaton->getSymbolByName(viaString);
+
+
+				char toChar = wordTo->getAllLetters()[1]->getLetter();
+				std::string toString = "";
+				toString += toChar;
+				const State* toState = automaton->getStateByName(toString);
+				
+				std::unique_ptr<Transition> transition= std::make_unique<Transition>(fromState, symbolVia, toState);
+				automaton->addTransition(std::move(transition));
+			}
+			
+		}
+
+		return automaton;
+	}
+};
+
+// TODO:
+// 1) FA -> Regular Grammar
+// 2) determine if FA is DFA or NFA
+// 3) NDFA -> DFA
+// 4) Graphically represent FA
+
+// my variant:
+/*
+Variant 20
+Q = {q0,q1,q2,q3},
+∑ = {a,b,c},
+F = {q3},
+δ(q0,a) = q0,
+δ(q0,a) = q1,
+δ(q2,a) = q2,
+δ(q1,b) = q2,
+δ(q2,c) = q3,
+δ(q3,c) = q3.
+*/
 
 int main() {
-    //Grammar g("S");
-//
-    //// variant 20
-    //g.addNonTerminal("S");
-    //g.addNonTerminal("A");
-    //g.addNonTerminal("B");
-    //g.addNonTerminal("C");
-//
-    //g.addTerminal('a');
-    //g.addTerminal('b');
-    //g.addTerminal('c');
-    //g.addTerminal('d');
-//
-    //g.addProduction("S", "dA");
-    //g.addProduction("A", "d");
-    //g.addProduction("A", "aB");
-    //g.addProduction("B", "bC");
-    //g.addProduction("C", "cA");
-    //g.addProduction("C", "aS");
-//
-    //g.print();
-//
-    //ValidWordGenerator gen(&g);
-//
-    //auto words = gen.generate(5);
-//
-    //for (const auto& w : words) {
-        //std::cout << w << "\n";
-    //}
-//
-    //printf("\n\n----\n");
-//
-    //Converter conv;
-    //auto fa = conv.grammarToFiniteAutomaton(&g);
-//
-    //std::cout << "\n=== Finite Automaton ===\n";
-    //fa.print();
-//
-//
-    //printf("\n\n----\n");
-    //std::vector<std::string> tests = {
-        //"dd",
-        //"dabca",
-        //"dabcad",
-        //"dabcabcad",
-        //"abc"
-    //};
-//
-//
-//
-    //for (const auto& w : tests) {
-        //std::cout << w << " -> " 
-                //<< (fa.accepts(w) ? "ACCEPTED" : "REJECTED") 
-                //<< "\n";
-    //}
-//
-    //printf("\n\n");
-    //// should be everywhere ACCEPTED
-    //for (const auto& w : words) {
-        //std::cout << w << " -> " 
-                //<< (fa.accepts(w) ? "ACCEPTED" : "REJECTED") 
-                //<< "\n";
-    //}
-//
-//
-//
-    return 0;
+	// ----------------------------
+	// Create grammar: S -> aS | b
+	// ----------------------------
+
+	std::unique_ptr<NonTerminal> S = std::make_unique<NonTerminal>('S');
+	Grammar grammar(std::move(S));
+
+	grammar.addTerminal(std::make_unique<Terminal>('a'));
+	grammar.addTerminal(std::make_unique<Terminal>('b'));
+
+	// S -> aS
+	{
+		std::unique_ptr<Word> from = std::make_unique<Word>();
+		from->appendLetter(grammar.getStartingSymbol());
+
+		std::unique_ptr<Word> to = std::make_unique<Word>();
+		to->appendLetter(grammar.getTerminals()[0]);  // 'a'
+		to->appendLetter(grammar.getStartingSymbol());
+
+		grammar.addProduction(
+			std::make_unique<Production>(std::move(from), std::move(to))
+		);
+	}
+
+	// S -> b
+	{
+		std::unique_ptr<Word> from = std::make_unique<Word>();
+		from->appendLetter(grammar.getStartingSymbol());
+
+		std::unique_ptr<Word> to = std::make_unique<Word>();
+		to->appendLetter(grammar.getTerminals()[1]);  // 'b'
+
+		grammar.addProduction(
+			std::make_unique<Production>(std::move(from), std::move(to))
+		);
+	}
+
+	// ----------------------------
+	// Generate few words
+	// ----------------------------
+
+	printf("Generated words:\n");
+
+	ValidWordGenerator gen(&grammar);
+	auto words = gen.generate(6);
+
+	for (const auto& w : words) {
+		w->print();
+		printf("\n");
+	}
+
+	// ----------------------------
+	// Convert grammar → automaton
+	// ----------------------------
+
+	ConverterGrammarToAutomaton converter;
+	std::unique_ptr<Automaton> automaton = converter.convert(&grammar);
+
+	// ----------------------------
+	// Test automaton on: ab
+	// ----------------------------
+
+	std::vector<std::unique_ptr<Symbol>> testWord;
+	testWord.push_back(std::make_unique<Symbol>("a"));
+	testWord.push_back(std::make_unique<Symbol>("b"));
+
+	bool accepted = automaton->accepts(std::move(testWord));
+
+	printf("\nTest word: ab -> %s\n", accepted ? "ACCEPT" : "REJECT");
+
+	return 0;
 }
