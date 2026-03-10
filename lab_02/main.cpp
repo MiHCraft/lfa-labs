@@ -403,14 +403,15 @@ public:
 
 
 
-class Automaton {
-private:
+class AbstractAutomaton {
+protected:
 	std::vector<std::unique_ptr<State>> states;
 	std::vector<std::unique_ptr<Symbol>> alphabet;
 	std::vector<std::unique_ptr<Transition>> transitions;
-	const State* startingState;
+	const State* startingState = nullptr;
 	std::vector<const State*> finalStates;
 
+	// helper methods
 	bool containsState(const State* state) const {
 		for (const std::unique_ptr<State>& st: this->states){
 			if (st.get() == state){
@@ -448,39 +449,96 @@ private:
 	}
 
 public:
-	Automaton(std::unique_ptr<State> start){
+	AbstractAutomaton() = default;
+	explicit AbstractAutomaton(std::unique_ptr<State> start){
 		this->startingState = start.get();
 		this->states.push_back(std::move(start));
 	}
-	
-	void addState(std::unique_ptr<State> state){
-		if(!this->containsState(state.get()))
-			this->states.push_back(std::move(state));
-	}
 
-	void setStateAsFinal(const State* finalState) {
-		if(this->containsState(finalState) && !this->isFinalState(finalState)){
-			finalStates.push_back(finalState);
+	virtual ~AbstractAutomaton() = default;
+
+	void addState(std::unique_ptr<State> state);
+	void setStateAsFinal(const State* finalState);
+	void addFinalState(std::unique_ptr<State> state);
+	void addSymbol(std::unique_ptr<Symbol> symbol);
+	void addTransition(std::unique_ptr<Transition> transition);
+	const State* getStateByName(std::string name) const;
+	const Symbol* getSymbolByName(std::string name);
+	
+	virtual bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const = 0;
+
+};
+
+void AbstractAutomaton::addState(std::unique_ptr<State> state) {
+	if(!this->containsState(state.get()))
+		this->states.push_back(std::move(state));
+}
+
+void AbstractAutomaton::setStateAsFinal(const State* finalState) {
+	if(this->containsState(finalState) && !this->isFinalState(finalState)){
+		finalStates.push_back(finalState);
+	}
+}
+
+void AbstractAutomaton::addFinalState(std::unique_ptr<State> state) {
+	const State* state_ptr = state.get();
+	this->addState(std::move(state));
+	this->setStateAsFinal(state_ptr);
+}
+
+void AbstractAutomaton::addSymbol(std::unique_ptr<Symbol> symbol) {
+	if (!this->containsSymbol(symbol.get()))
+		this->alphabet.push_back(std::move(symbol));
+}
+
+void AbstractAutomaton::addTransition(std::unique_ptr<Transition> transition){
+	if (!this->containsTransition(transition.get()))
+		this->transitions.push_back(std::move(transition));
+}
+
+const State* AbstractAutomaton::getStateByName(std::string name) const{
+	for (const std::unique_ptr<State>& state : this->states){
+		if (state->isName(name)){
+			return state.get();
 		}
 	}
+	return nullptr;
+}
 
-	void addFinalState(std::unique_ptr<State> state) {
-		const State* state_ptr = state.get();
-		this->addState(std::move(state));
-		this->setStateAsFinal(state_ptr);
+const Symbol* AbstractAutomaton::getSymbolByName(std::string name){
+	for (std::unique_ptr<Symbol>& symbol : this->alphabet){
+		if (symbol->isName(name)){
+			return symbol.get();
+		}
+	}
+	return nullptr;
+}
+
+class NonDeterministicAutomaton : public AbstractAutomaton{
+public:
+	explicit NonDeterministicAutomaton(std::unique_ptr<State> start)
+        : AbstractAutomaton(std::move(start))   // ← important: call base constructor
+    {
+    }
+
+	bool isDeterministic() const {
+		for (const auto& st : states) {
+			for (const auto& sym : alphabet) {
+				std::set<const State*> targets;
+				for (const auto& tr : transitions) {
+					if (tr->isFromStateAndViaSymbol(st.get(), sym.get())) {
+						targets.insert(tr->getToState());
+					}
+				}
+				if (targets.size() > 1) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
-	void addSymbol(std::unique_ptr<Symbol> symbol) {
-		if (!this->containsSymbol(symbol.get()))
-			this->alphabet.push_back(std::move(symbol));
-	}
-
-	void addTransition(std::unique_ptr<Transition> transition){
-		if (!this->containsTransition(transition.get()))
-			this->transitions.push_back(std::move(transition));
-	}
-
-	bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const{
+	bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const override{
 		std::vector<const State*> currentStates;
 		currentStates.push_back(this->startingState);
 
@@ -507,30 +565,19 @@ public:
 
 		return false;
 	}
-
-	const State* getStateByName(std::string name){
-		for (std::unique_ptr<State>& state : this->states){
-			if (state->isName(name)){
-				return state.get();
-			}
-		}
-		return nullptr;
-	}
-
-	const Symbol* getSymbolByName(std::string name){
-		for (std::unique_ptr<Symbol>& symbol : this->alphabet){
-			if (symbol->isName(name)){
-				return symbol.get();
-			}
-		}
-		return nullptr;
-	}
 };
+
+
+
+
+
+
+
 
 
 class ConverterGrammarToAutomaton{
 public:
-	std::unique_ptr<Automaton> convert(const Grammar* grammar) const{
+	std::unique_ptr<NonDeterministicAutomaton> convert(const Grammar* grammar) const{
 		// Create final state
 		std::unique_ptr<State> FINAL = std::make_unique<State>("__FINAL__");
 		const State* finalState = FINAL.get();
@@ -538,8 +585,9 @@ public:
 		std::unique_ptr<State> startingState = std::make_unique<State>(grammar->getStartingSymbolName());
 
 		// create Automaton itself (and parsing the starting state)
-		std::unique_ptr<Automaton> automaton = std::make_unique<Automaton>(std::move(startingState));
+		std::unique_ptr<NonDeterministicAutomaton> automaton = std::make_unique<NonDeterministicAutomaton>(std::move(startingState));
 		// parse the final state;
+		
 		automaton->addFinalState(std::move(FINAL));
 
 		std::vector<const NonTerminal*> nonTerminals = grammar->getNonTerminals();
@@ -688,7 +736,7 @@ int main() {
 	// ----------------------------
 
 	ConverterGrammarToAutomaton converter;
-	std::unique_ptr<Automaton> automaton = converter.convert(&grammar);
+	std::unique_ptr<NonDeterministicAutomaton> automaton = converter.convert(&grammar);
 
 	// ----------------------------
 	// Test automaton on: ab
