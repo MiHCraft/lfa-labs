@@ -25,24 +25,24 @@
 // Firstly, we have a letter. A Letter is an abstract class, as there are only 2 types of Letters: terminal and non-terminal.
 class AbstractLetter {
 protected:
-	char letter;
+	std::string letter;
 public:
-	AbstractLetter(char letter){
+	AbstractLetter(std::string letter){
 		this->letter = letter;
 	}
 
 	virtual ~AbstractLetter() {}
 
-	void setLetter(char letter) {
+	void setLetter(std::string letter) {
 		this->letter = letter;
 	}
 
-	char getLetter() const {
+	std::string getLetter() const {
 		return this->letter;
 	}
 
 	void print() const {
-		printf("%c", letter);
+		std::cout << letter;
 	}
 
 	// This method is fully virtual, that makes this class Abstract.
@@ -64,7 +64,7 @@ public:
 
 class Terminal : public AbstractLetter {
 public:
-	Terminal(char letter) : AbstractLetter(letter) {}
+	Terminal(std::string letter) : AbstractLetter(letter) {}
 
 	bool isTerminal() const override {
 		return true;
@@ -73,7 +73,7 @@ public:
 
 class NonTerminal : public AbstractLetter {
 public:
-	NonTerminal(char letter) : AbstractLetter(letter) {}
+	NonTerminal(std::string letter) : AbstractLetter(letter) {}
 
 	bool isTerminal() const override {
 		return false;
@@ -177,9 +177,9 @@ public:
 
 	void print() const{
 		this->from->print();
-		printf(" -> ");
+		std::cout << " -> ";
 		this->to->print();
-		printf(";\n");
+		std::cout << ";\n";
 	}
 
 	bool canApplyRight(const Word* word) const{
@@ -295,6 +295,28 @@ public:
 		resultingString += startingSymbol->getLetter();
 		return resultingString;
 	}
+
+
+	//lookups
+	const NonTerminal* getNonTerminalByLetter(const std::string& letter) const {
+		for (const auto& nt : nonTerminals) {
+			if (nt->getLetter() == letter) {
+				return nt.get();
+			}
+		}
+		return nullptr;
+	}
+
+	const Terminal* getTerminalByLetter(const std::string& letter) const {
+		for (const auto& t : terminals) {
+			if (t->getLetter() == letter) {
+				return t.get();
+			}
+		}
+		return nullptr;
+	}
+
+
 };
 
 class ValidWordGenerator{
@@ -360,6 +382,10 @@ public:
 	State(std::string name){
 		this->nameOfState = name;
 	}
+
+	std::string getName() const {
+        return nameOfState;
+    }
 
 	bool isName(std::string name){
 		return this->nameOfState == name;
@@ -595,8 +621,7 @@ public:
 
 		// NonTerminals are the States;
 		for (const NonTerminal* nt : nonTerminals){
-			std::string st = "";
-			st += nt->getLetter();
+			std::string st = nt->getLetter();
 			std::unique_ptr<State> stat = std::make_unique<State>(st);
 			automaton->addState(std::move(stat));
 			//add each nt to states as a state. create new state each time and call function addState();
@@ -605,8 +630,7 @@ public:
 		// Terminals are alphabet, nullptr = epsilpn.
 		std::vector<const Terminal*> terminals = grammar->getTerminals();
 		for(const Terminal* t : terminals){
-			std::string st = "";
-			st += t->getLetter();
+			std::string st = t->getLetter();
 			std::unique_ptr<Symbol> sy = std::make_unique<Symbol>(st);
 			automaton->addSymbol(std::move(sy));
 		}
@@ -618,18 +642,14 @@ public:
 			// get first letter from FROM
 			const Word* wordFrom = p->getFrom();
 			const AbstractLetter* al = wordFrom->getAllLetters()[0];
-			const char fromChar = al->getLetter();
-
-			std::string fromString = "";
-			fromString += fromChar;
+			const std::string fromString = al->getLetter();
+			
 			const State* fromState = automaton->getStateByName(fromString);
 
 			const Word* wordTo = p->getTo();
 			if (wordTo->getLength() == 1 && wordTo->getAllLetters()[0]->isTerminal()){
 				// format A->a
-				char viaChar = wordTo->getAllLetters()[0]->getLetter();
-				std::string viaString = "";
-				viaString += viaChar;
+				std::string viaString = wordTo->getAllLetters()[0]->getLetter();
 				const Symbol* symbolVia = automaton->getSymbolByName(viaString);
 				const State* toState = finalState;
 				std::unique_ptr<Transition> transition= std::make_unique<Transition>(fromState, symbolVia, toState);
@@ -638,15 +658,11 @@ public:
 
 			if (wordTo->getLength() == 2){
 				// format A->aB
-				char viaChar = wordTo->getAllLetters()[0]->getLetter();
-				std::string viaString = "";
-				viaString += viaChar;
+				std::string viaString = wordTo->getAllLetters()[0]->getLetter();
 				const Symbol* symbolVia = automaton->getSymbolByName(viaString);
 
 
-				char toChar = wordTo->getAllLetters()[1]->getLetter();
-				std::string toString = "";
-				toString += toChar;
+				std::string toString = wordTo->getAllLetters()[1]->getLetter();
 				const State* toState = automaton->getStateByName(toString);
 				
 				std::unique_ptr<Transition> transition= std::make_unique<Transition>(fromState, symbolVia, toState);
@@ -684,11 +700,11 @@ int main() {
 	// Create grammar: S -> aS | b
 	// ----------------------------
 
-	std::unique_ptr<NonTerminal> S = std::make_unique<NonTerminal>('S');
+	std::unique_ptr<NonTerminal> S = std::make_unique<NonTerminal>("S");
 	Grammar grammar(std::move(S));
 
-	grammar.addTerminal(std::make_unique<Terminal>('a'));
-	grammar.addTerminal(std::make_unique<Terminal>('b'));
+	grammar.addTerminal(std::make_unique<Terminal>("a"));
+	grammar.addTerminal(std::make_unique<Terminal>("b"));
 
 	// S -> aS
 	{
