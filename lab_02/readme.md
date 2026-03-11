@@ -1,167 +1,123 @@
-# Regular Grammar Processing and Finite Automaton Construction
+# Determinism in Finite Automata. Conversion from NDFA to DFA. Chomsky Hierarchy.
 
 ### Course: Formal Languages & Finite Automata  
-### Author: Mihail Pancenco  
+### Author: Mihail Pancenco
 
-----
+---
 
 ## Theory
 
-A **formal language** is a precisely defined set of strings constructed from a finite alphabet using a fixed set of production rules. Formal languages are widely used in computer science for modeling programming languages, communication protocols, and computation models.
+A **finite automaton** is a mathematical model that recognizes regular languages. It consists of a finite set of states, an alphabet, a transition function, a start state, and a set of final (accepting) states.
 
-A **grammar** describes how valid strings of a language are generated. A grammar is defined as:
+When the transition function can lead to **multiple states** for the same input symbol from one state, the automaton is **non-deterministic (NFA)**.  
+If every state-symbol pair has **at most one** next state, the automaton is **deterministic (DFA)**.
 
-G = (Vn, Vt, P, S),
+Every NFA can be converted into an equivalent DFA using the **subset construction** (powerset) algorithm. The resulting DFA may have up to 2ⁿ states (where n is the number of states in the NFA).
 
-where:
-- Vn is the set of non-terminal symbols,
-- Vt is the set of terminal symbols,
-- P is the set of production rules,
-- S is the start symbol.
-
-A **regular grammar** is a special type of grammar in which all production rules have one of the following forms:
-
-- A → a  
-- A → aB  
-
-where A and B are non-terminals and a is a terminal symbol.
-
-A **finite automaton (FA)** is a mathematical model of computation that recognizes languages by reading symbols sequentially and transitioning between states. Regular grammars and finite automata are equivalent in expressive power, meaning that for every regular grammar, there exists a finite automaton that recognizes the same language.
+Regular languages are located at the lowest level of the **Chomsky hierarchy** (Type-3). Regular grammars and finite automata are equivalent: any regular grammar can be converted to an FA and vice versa.
 
 ---
 
 ## Objectives
 
-* Implement a class for representing a regular grammar.
-* Generate valid strings from the grammar.
-* Convert a regular grammar into a finite automaton.
-* Implement a string acceptance algorithm for the finite automaton.
-* Validate correctness by testing generated strings.
+* Understand what a finite automaton is and how it models computation.
+* Continue working in the same repository/project and add the following:
+  * Implement conversion of a finite automaton to a regular grammar.
+  * Determine whether a given FA is deterministic or non-deterministic.
+  * Implement conversion from NFA to DFA (subset construction algorithm).
+  * Represent the finite automaton graphically (**bonus point** – implemented with Raylib).
+* (Optional) Add a function that classifies a grammar according to the Chomsky hierarchy (not required for this variant).
 
 ---
 
 ## Implementation description
 
-The project is implemented in **C++** using object-oriented design principles. The code is structured into multiple logical components.
+The project is written in **C++23** using object-oriented design and the Raylib library for graphical output. All classes store objects via smart pointers (`std::unique_ptr`) for safe memory management.
 
-### Grammar class
+### Core classes
 
-The `Grammar` class stores the formal grammar using sets for non-terminals and terminals, a vector for productions, and a string for the start symbol. It also provides functionality for adding grammar components and expanding strings using production rules.
+* `AbstractAutomaton` – base class for both NFA and DFA.
+* `NonDeterministicAutomaton` – supports multiple transitions per state-symbol pair.
+* `DeterministicAutomaton` – enforces single transition per state-symbol (aborts on violation).
+* `State`, `Symbol`, `Transition` – basic building blocks.
+* `Grammar`, `Production`, `Word` – reused from previous lab for FA ↔ Grammar conversion.
+
+### Key converters
 
 ```cpp
-class Grammar {
-private:
-    std::set<std::string> Vn;
-    std::set<char> Vt;
-    std::vector<Production> P;
-    std::string S;
-};
+// NFA → DFA (subset construction)
+std::unique_ptr<DeterministicAutomaton> ConverterNFAToDFA::convert(const NonDeterministicAutomaton* nfa);
+
+// FA → Regular Grammar
+std::unique_ptr<Grammar> ConverterAutomatonToGrammar::convert(const AbstractAutomaton* automaton);
+
+// Grammar → NFA (reused from previous lab)
+std::unique_ptr<NonDeterministicAutomaton> ConverterGrammarToAutomaton::convert(const Grammar* grammar);
+```
+
+### Determinism check
+
+```cpp
+bool NonDeterministicAutomaton::isDeterministic() const;
+```
+
+### Graphical representation (bonus)
+
+The `Drawing` class uses **Raylib** to display:
+
+* NFA graph (left) and DFA graph (right) with red circles marking arrow heads.
+* NFA and DFA transition tables (bottom) showing:
+  * `→` for start state
+  * `*` for final states
+  * `{}` for empty transitions
+  * Multiple targets in NFA cells (e.g. `q0,q1`)
+
+Everything is drawn statically in one window for easy comparison.
+
+### Main execution flow (in `main()`)
+
+```cpp
+// 1. Create the NFA from Variant 20
+// 2. Check determinism
+// 3. Convert NFA → Regular Grammar
+// 4. Convert Grammar → NFA (verification)
+// 5. Convert NFA → DFA
+// 6. Convert DFA → Regular Grammar (verification)
+// 7. Generate words and test acceptance on all automata
+// 8. Launch Raylib window with graphs + tables
 ```
 
 ---
 
-### ValidWordGenerator class
+## Conclusions / Screenshots / Results
 
-This class generates valid words belonging to the language defined by the grammar. It uses a **breadth-first search (BFS)** strategy, ensuring that short valid strings are produced first while avoiding infinite expansions.
+The program successfully:
 
-```cpp
-std::vector<std::string> generate(size_t maxWords = 15);
+* Correctly identifies the given automaton as **non-deterministic**.
+* Converts the NFA to an equivalent DFA using subset construction.
+* Converts both automata to regular grammars and back.
+* All generated words are accepted/rejected identically by the original NFA, the converted DFA, and the automata obtained from grammars.
+
+**Console output example** (shortened):
+
 ```
+Deterministic? -> NO
+NFA → DFA conversion completed
+Generated words tested on all automata → 100% match
+```
+
+**Visual result** (what you see when running the program):
+
+![NFA vs DFA with tables](./image.png)  
+*(Left: NFA graph + table | Right: DFA graph + table)*
+
+The graphical representation clearly shows how the DFA has more states but no ambiguity.
 
 ---
 
-### FiniteAutomaton class
+## References
 
-This class models a **nondeterministic finite automaton (NFA)** using:
-
--   a set of states,
-    
--   an alphabet,
-    
--   a list of transitions,
-    
--   a start state,
-    
--   a set of final states.
-    
-
-It also implements a function that verifies whether a given string is accepted by the automaton.
-
-```cpp
-bool accepts(const std::string& word) const;
-```
-
----
-
-### Grammar → Finite Automaton Conversion
-
-The `Converter` class transforms a grammar into a finite automaton by mapping each grammar production into a transition rule.
-
-```cpp
-FiniteAutomaton grammarToFiniteAutomaton(Grammar *g);
-```
-
-Conversion rules:
-
--   A → a → A --a--> FINAL
-    
--   A → aB → A --a--> B
-    
-
----
-
-### Main execution logic
-
-The main function initializes the grammar, generates valid words, converts the grammar into a finite automaton, and tests the correctness of the automaton.
-
-```cpp
-int main() {
-    Grammar g("S");
-
-    g.addProduction("S", "dA");
-    g.addProduction("A", "d");
-    g.addProduction("A", "aB");
-    g.addProduction("B", "bC");
-    g.addProduction("C", "cA");
-    g.addProduction("C", "aS");
-
-    ValidWordGenerator gen(&g);
-    auto words = gen.generate(5);
-
-    Converter conv;
-    auto fa = conv.grammarToFiniteAutomaton(&g);
-
-    for (const auto& w : words) {
-        std::cout << w << " -> "
-                  << (fa.accepts(w) ? "ACCEPTED" : "REJECTED") << "\n";
-    }
-}
-```
-
----
-
-## Conclusions / Results
-
-The generated words were successfully recognized by the constructed finite automaton, confirming the correctness of the grammar-to-automaton conversion.
-
-Example results:
-
-```bash
-dd           → ACCEPTED
-dabca        → ACCEPTED
-dabcad       → ACCEPTED
-dabcabcad    → ACCEPTED
-abc          → REJECTED
-```
-
-This demonstrates that:
-
--   The grammar correctly generates valid strings.
-    
--   The finite automaton accurately recognizes the same language.
-    
--   The implementation proves the theoretical equivalence between regular grammars and finite automata.
-    
-    
-
-
+1. Hopcroft, J. E., Motwani, R., & Ullman, J. D. (2007). *Introduction to Automata Theory, Languages, and Computation*.
+2. Raylib official documentation – https://www.raylib.com/
+3. Course materials: Formal Languages & Finite Automata (Vasile Drumea, Irina Cojuhari).
+4. Previous lab report (Regular Grammar → Finite Automaton).
