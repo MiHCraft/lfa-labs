@@ -1078,17 +1078,23 @@ void testWordsOnAutomaton(
         printf(" -> %s\n", accepted ? "ACCEPT" : "REJECT");
     }
 }
-
 // ===================================================================
-// UPDATED Drawing CLASS - SUPER SIMPLE VERSION (as you asked)
+// UPDATED Drawing CLASS - STATIC LAYOUT WITH GRAPHS + TABLES
 // ===================================================================
 // What changed:
-// • NO arrow triangles anymore (they were not showing for you)
-// • Instead: thick line + SMALL RED FILLED CIRCLE at the head
-//   (the red circle shows exactly where the transition "arrives")
-// • Much simpler math → guaranteed to work
-// • Self-loops stay as before (they already look like loops)
-// • Everything else (labels, states, layout) is the same
+// • NO animation, NO slideshow, NO explanation text
+// • Clean static view:
+//      Left:   NFA Graph
+//      Below:  NFA Transition Table
+//      Right:  DFA Graph
+//      Below:  DFA Transition Table
+// • Tables show:
+//      • Start states with →
+//      • Final states with *
+//      • Empty transitions as {}
+//      • NFA cells can have multiple states (e.g. q0,q1)
+// • Red circles still mark arrow heads
+// • Everything is drawn at once — perfect for studying
 // ===================================================================
 
 class Drawing {
@@ -1111,7 +1117,7 @@ private:
 
         float radius = 200.0f;
         float cx = xOffset;
-        float cy = height / 2.0f;
+        float cy = height / 2.0f - 50;   // a bit higher to leave space for tables
 
         int n = states.size();
         int i = 0;
@@ -1150,37 +1156,25 @@ private:
 
         if (isStart)
         {
-            DrawTriangle(
-                {pos.x - 50, pos.y},
-                {pos.x - 35, pos.y - 10},
-                {pos.x - 35, pos.y + 10},
-                BLACK
-            );
+            DrawTriangle({pos.x - 50, pos.y}, {pos.x - 35, pos.y - 10}, {pos.x - 35, pos.y + 10}, BLACK);
         }
     }
 
-    // ===================================================================
-    // SIMPLEST POSSIBLE drawTransition - ONLY LINE + RED CIRCLE
-    // ===================================================================
     void drawTransition(Vec from, Vec to, const std::string& label, bool selfLoop)
     {
         if (selfLoop)
         {
-            // Self-loop stays exactly as before (already clear)
             DrawCircleLines(from.x, from.y - 55, 20, DARKGRAY);
             DrawText(label.c_str(), from.x - 8, from.y - 85, 20, BLACK);
             DrawTriangle({from.x + 10, from.y - 75}, {from.x + 20, from.y - 65}, {from.x, from.y - 65}, DARKGRAY);
             return;
         }
 
-        // ---------- Normal transition ----------
         Vector2 p1 = {from.x, from.y};
         Vector2 p2 = {to.x,   to.y};
 
-        // 1. Draw thick line
         DrawLineEx(p1, p2, 4.0f, DARKGRAY);
 
-        // 2. Calculate direction (unit vector)
         float dx = p2.x - p1.x;
         float dy = p2.y - p1.y;
         float len = sqrt(dx * dx + dy * dy);
@@ -1189,25 +1183,106 @@ private:
         dx /= len;
         dy /= len;
 
-        // 3. Place RED CIRCLE at the head (a bit before the target state)
-        float inset = 35.0f;                    // how far from the center of target state
-        Vector2 head = {
-            p2.x - dx * inset,
-            p2.y - dy * inset
-        };
+        float inset = 35.0f;
+        Vector2 head = { p2.x - dx * inset, p2.y - dy * inset };
 
-        DrawCircle(head.x, head.y, 8, RED);     // ← THIS IS WHAT YOU ASKED FOR
-        DrawCircleLines(head.x, head.y, 8, BLACK);  // small black border so it's visible on any background
+        DrawCircle(head.x, head.y, 8, RED);
+        DrawCircleLines(head.x, head.y, 8, BLACK);
 
-        // 4. Label in the middle (slightly above the line)
         float midx = (p1.x + p2.x) / 2.0f - 8;
         float midy = (p1.y + p2.y) / 2.0f - 15;
         DrawText(label.c_str(), (int)midx, (int)midy, 20, BLACK);
     }
 
+    // ===================================================================
+    // NEW: Draws a nice transition table (works for both NFA and DFA)
+    // ===================================================================
+    void drawTransitionTable(const AbstractAutomaton* aut, float tableX, float tableY, const char* title)
+    {
+        float cellW = 105.0f;
+        float cellH = 38.0f;
+
+        // Collect transitions (NFA can have multiple, DFA has one)
+        std::map<std::string, std::map<std::string, std::string>> tableData;
+        for (const auto& tr : aut->getTransitions())
+        {
+            std::string from = tr->getFromState()->getName();
+            std::string sym  = tr->getSymbol()->getNameOfSymbol();
+            std::string to   = tr->getToState()->getName();
+
+            if (tableData[from][sym].empty())
+                tableData[from][sym] = to;
+            else
+                tableData[from][sym] += "," + to;
+        }
+
+        auto states   = aut->getStates();
+        auto symbols  = aut->getAlphabet();
+        int numCols   = symbols.size() + 1;
+        float totalW  = numCols * cellW;
+        float totalH  = (states.size() + 1) * cellH;
+
+        // Title
+        DrawText(title, tableX + 20, tableY - 40, 24, BLACK);
+
+        // === DRAW GRID ===
+        // vertical lines
+        for (int c = 0; c <= numCols; c++)
+        {
+            float lx = tableX + c * cellW;
+            DrawLine(lx, tableY, lx, tableY + totalH, BLACK);
+        }
+        // horizontal lines
+        for (int r = 0; r <= states.size() + 1; r++)
+        {
+            float ly = tableY + r * cellH;
+            DrawLine(tableX, ly, tableX + totalW, ly, BLACK);
+        }
+
+        // === HEADER ===
+        DrawText("State", tableX + 12, tableY + 8, 20, BLACK);
+        float colX = tableX + cellW;
+        for (const auto& sy : symbols)
+        {
+            DrawText(sy->getNameOfSymbol().c_str(), colX + 25, tableY + 8, 20, BLACK);
+            colX += cellW;
+        }
+
+        // === ROWS ===
+        int row = 1;
+        for (const State* st : states)
+        {
+            std::string sName = st->getName();
+            float rowY = tableY + row * cellH + 8;
+
+            // State name with start/final markers
+            std::string label = sName;
+            if (st == aut->getStartingState()) label = "→" + label;
+            bool final = false;
+            for (const State* f : aut->getFinalStates())
+                if (f == st) { final = true; break; }
+            if (final) label += "*";
+
+            DrawText(label.c_str(), tableX + 12, rowY, 20, BLACK);
+
+            // Transition cells
+            colX = tableX + cellW + 10;
+            for (const auto& sy : symbols)
+            {
+                std::string symName = sy->getNameOfSymbol();
+                std::string targets = tableData[sName][symName];
+                if (targets.empty()) targets = "{}";
+
+                DrawText(targets.c_str(), colX, rowY, 20, BLACK);
+                colX += cellW;
+            }
+            row++;
+        }
+    }
+
 public:
 
-    Drawing(int w = 1400, int h = 800)
+    Drawing(int w = 1400, int h = 1000)
     {
         width = w;
         height = h;
@@ -1218,7 +1293,7 @@ public:
         const AbstractAutomaton* dfa
     )
     {
-        InitWindow(width, height, "Automata Visualizer - NFA vs DFA (Red circles = arrow heads)");
+        InitWindow(width, height, "NFA vs DFA - Graphs + Transition Tables");
         SetTargetFPS(60);
 
         auto posNFA = layoutStates(nfa, width * 0.25f);
@@ -1229,19 +1304,18 @@ public:
             BeginDrawing();
             ClearBackground(RAYWHITE);
 
-            DrawText("NFA (Non-deterministic)", width * 0.25f - 130, 30, 30, BLACK);
-            DrawText("DFA (Deterministic)",     width * 0.75f - 110, 30, 30, BLACK);
+            // ====================== TITLES ======================
+            DrawText("NFA (original)", width * 0.20f - 80, 15, 30, BLACK);
+            DrawText("DFA (converted)", width * 0.75f - 95, 15, 30, BLACK);
 
-            // ------------------ NFA ------------------
+            // ====================== NFA GRAPH (left) ======================
             for (const auto& tr : nfa->getTransitions())
             {
                 Vec from = posNFA[tr->getFromState()];
                 Vec to   = posNFA[tr->getToState()];
                 bool loop = tr->getFromState() == tr->getToState();
-
                 drawTransition(from, to, tr->getSymbol()->getNameOfSymbol(), loop);
             }
-
             for (const State* st : nfa->getStates())
             {
                 drawState(st, posNFA[st],
@@ -1249,16 +1323,14 @@ public:
                           isFinal(nfa, st));
             }
 
-            // ------------------ DFA ------------------
+            // ====================== DFA GRAPH (right) ======================
             for (const auto& tr : dfa->getTransitions())
             {
                 Vec from = posDFA[tr->getFromState()];
                 Vec to   = posDFA[tr->getToState()];
                 bool loop = tr->getFromState() == tr->getToState();
-
                 drawTransition(from, to, tr->getSymbol()->getNameOfSymbol(), loop);
             }
-
             for (const State* st : dfa->getStates())
             {
                 drawState(st, posDFA[st],
@@ -1266,14 +1338,16 @@ public:
                           isFinal(dfa, st));
             }
 
+            // ====================== TABLES (bottom) ======================
+            drawTransitionTable(nfa, 40,  780, "NFA Transition Table");
+            drawTransitionTable(dfa, width * 0.5f + 30, 780, "DFA Transition Table");
+
             EndDrawing();
         }
 
         CloseWindow();
     }
 };
-
-
 int main(){
 
     printf("====================================\n");
