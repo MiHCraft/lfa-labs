@@ -11,9 +11,12 @@
 #include <string> // just to not to use array of characters.
 #include <cstdio> // ChatGPT said that it is important for printf, on other OS it might not work without it.
 #include <memory> // chatGPT said that this is important for unique_ptr, which are some sort of smart pointers
+#include <cmath>
+#include <map>
+#include <raylib.h>
 
 // compile commamd, use the last version of c++
-// g++ -std=c++23 main.cpp -o main.out
+// g++ main.cpp -std=c++23 -o main.out -I/opt/homebrew/include -L/opt/homebrew/lib -lraylib
 
 // We use an OOP style when all the classes store other objects (aka. composition) by pointers. And all the objects are stoted in RAM. Why this choice? Because it is easy for me to write.
 
@@ -662,7 +665,7 @@ public:
 		// NonTerminals are the States;
 		for (const NonTerminal* nt : nonTerminals){
 			std::string st = nt->getLetter();
-			
+
 			// starting state already exist
 			if (st == grammar->getStartingSymbolName())
 				continue;
@@ -1075,6 +1078,202 @@ void testWordsOnAutomaton(
         printf(" -> %s\n", accepted ? "ACCEPT" : "REJECT");
     }
 }
+
+// ===================================================================
+// UPDATED Drawing CLASS - SUPER SIMPLE VERSION (as you asked)
+// ===================================================================
+// What changed:
+// • NO arrow triangles anymore (they were not showing for you)
+// • Instead: thick line + SMALL RED FILLED CIRCLE at the head
+//   (the red circle shows exactly where the transition "arrives")
+// • Much simpler math → guaranteed to work
+// • Self-loops stay as before (they already look like loops)
+// • Everything else (labels, states, layout) is the same
+// ===================================================================
+
+class Drawing {
+
+private:
+
+    int width;
+    int height;
+
+    struct Vec {
+        float x;
+        float y;
+    };
+
+    std::map<const State*, Vec> layoutStates(const AbstractAutomaton* automaton, float xOffset)
+    {
+        std::map<const State*, Vec> pos;
+
+        auto states = automaton->getStates();
+
+        float radius = 200.0f;
+        float cx = xOffset;
+        float cy = height / 2.0f;
+
+        int n = states.size();
+        int i = 0;
+
+        for (const State* st : states)
+        {
+            float angle = 2 * 3.14159265f * i / n;
+
+            float x = cx + cos(angle) * radius;
+            float y = cy + sin(angle) * radius;
+
+            pos[st] = {x, y};
+            i++;
+        }
+
+        return pos;
+    }
+
+    bool isFinal(const AbstractAutomaton* a, const State* s)
+    {
+        for (const State* f : a->getFinalStates())
+            if (f == s)
+                return true;
+        return false;
+    }
+
+    void drawState(const State* state, Vec pos, bool isStart, bool isFinal)
+    {
+        float r = 30.0f;
+
+        DrawCircleLines(pos.x, pos.y, r, BLACK);
+        if (isFinal)
+            DrawCircleLines(pos.x, pos.y, r - 6, BLACK);
+
+        DrawText(state->getName().c_str(), pos.x - 12, pos.y - 10, 20, BLACK);
+
+        if (isStart)
+        {
+            DrawTriangle(
+                {pos.x - 50, pos.y},
+                {pos.x - 35, pos.y - 10},
+                {pos.x - 35, pos.y + 10},
+                BLACK
+            );
+        }
+    }
+
+    // ===================================================================
+    // SIMPLEST POSSIBLE drawTransition - ONLY LINE + RED CIRCLE
+    // ===================================================================
+    void drawTransition(Vec from, Vec to, const std::string& label, bool selfLoop)
+    {
+        if (selfLoop)
+        {
+            // Self-loop stays exactly as before (already clear)
+            DrawCircleLines(from.x, from.y - 55, 20, DARKGRAY);
+            DrawText(label.c_str(), from.x - 8, from.y - 85, 20, BLACK);
+            DrawTriangle({from.x + 10, from.y - 75}, {from.x + 20, from.y - 65}, {from.x, from.y - 65}, DARKGRAY);
+            return;
+        }
+
+        // ---------- Normal transition ----------
+        Vector2 p1 = {from.x, from.y};
+        Vector2 p2 = {to.x,   to.y};
+
+        // 1. Draw thick line
+        DrawLineEx(p1, p2, 4.0f, DARKGRAY);
+
+        // 2. Calculate direction (unit vector)
+        float dx = p2.x - p1.x;
+        float dy = p2.y - p1.y;
+        float len = sqrt(dx * dx + dy * dy);
+        if (len == 0) return;
+
+        dx /= len;
+        dy /= len;
+
+        // 3. Place RED CIRCLE at the head (a bit before the target state)
+        float inset = 35.0f;                    // how far from the center of target state
+        Vector2 head = {
+            p2.x - dx * inset,
+            p2.y - dy * inset
+        };
+
+        DrawCircle(head.x, head.y, 8, RED);     // ← THIS IS WHAT YOU ASKED FOR
+        DrawCircleLines(head.x, head.y, 8, BLACK);  // small black border so it's visible on any background
+
+        // 4. Label in the middle (slightly above the line)
+        float midx = (p1.x + p2.x) / 2.0f - 8;
+        float midy = (p1.y + p2.y) / 2.0f - 15;
+        DrawText(label.c_str(), (int)midx, (int)midy, 20, BLACK);
+    }
+
+public:
+
+    Drawing(int w = 1400, int h = 800)
+    {
+        width = w;
+        height = h;
+    }
+
+    void drawAutomata(
+        const AbstractAutomaton* nfa,
+        const AbstractAutomaton* dfa
+    )
+    {
+        InitWindow(width, height, "Automata Visualizer - NFA vs DFA (Red circles = arrow heads)");
+        SetTargetFPS(60);
+
+        auto posNFA = layoutStates(nfa, width * 0.25f);
+        auto posDFA = layoutStates(dfa, width * 0.75f);
+
+        while (!WindowShouldClose())
+        {
+            BeginDrawing();
+            ClearBackground(RAYWHITE);
+
+            DrawText("NFA (Non-deterministic)", width * 0.25f - 130, 30, 30, BLACK);
+            DrawText("DFA (Deterministic)",     width * 0.75f - 110, 30, 30, BLACK);
+
+            // ------------------ NFA ------------------
+            for (const auto& tr : nfa->getTransitions())
+            {
+                Vec from = posNFA[tr->getFromState()];
+                Vec to   = posNFA[tr->getToState()];
+                bool loop = tr->getFromState() == tr->getToState();
+
+                drawTransition(from, to, tr->getSymbol()->getNameOfSymbol(), loop);
+            }
+
+            for (const State* st : nfa->getStates())
+            {
+                drawState(st, posNFA[st],
+                          st == nfa->getStartingState(),
+                          isFinal(nfa, st));
+            }
+
+            // ------------------ DFA ------------------
+            for (const auto& tr : dfa->getTransitions())
+            {
+                Vec from = posDFA[tr->getFromState()];
+                Vec to   = posDFA[tr->getToState()];
+                bool loop = tr->getFromState() == tr->getToState();
+
+                drawTransition(from, to, tr->getSymbol()->getNameOfSymbol(), loop);
+            }
+
+            for (const State* st : dfa->getStates())
+            {
+                drawState(st, posDFA[st],
+                          st == dfa->getStartingState(),
+                          isFinal(dfa, st));
+            }
+
+            EndDrawing();
+        }
+
+        CloseWindow();
+    }
+};
+
+
 int main(){
 
     printf("====================================\n");
@@ -1200,6 +1399,16 @@ int main(){
     printf("\n====================================\n");
     printf("Program finished successfully\n");
     printf("====================================\n");
+
+
+	Drawing drawing;
+
+	drawing.drawAutomata(
+		nfa.get(),
+		dfa.get()
+	);
+
+
 
     return 0;
 }
