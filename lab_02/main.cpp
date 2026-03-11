@@ -422,6 +422,15 @@ public:
 			return true;
 		return false;
 	}
+	
+	const State* getFromState() const {
+		return stateFrom;
+	}
+
+	const Symbol* getSymbol() const {
+		return viaSymbol;
+	}
+
 	const State* getToState() const{
 		return stateTo;
 	}
@@ -487,11 +496,42 @@ public:
 	void setStateAsFinal(const State* finalState);
 	void addFinalState(std::unique_ptr<State> state);
 	void addSymbol(std::unique_ptr<Symbol> symbol);
-	void addTransition(std::unique_ptr<Transition> transition);
+	virtual void addTransition(std::unique_ptr<Transition> transition);
 	const State* getStateByName(std::string name) const;
 	const Symbol* getSymbolByName(std::string name);
 	
 	virtual bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const = 0;
+
+	const State* getStartingState() const {
+		return startingState;
+	}
+
+	std::vector<const State*> getStates() const {
+		std::vector<const State*> result;
+		for (const auto& s : states)
+			result.push_back(s.get());
+		return result;
+	}
+
+	std::vector<const Symbol*> getAlphabet() const {
+		std::vector<const Symbol*> result;
+		for (const auto& s : alphabet)
+			result.push_back(s.get());
+		return result;
+	}
+
+	std::vector<const Transition*> getTransitions() const {
+		std::vector<const Transition*> result;
+		for (const auto& t : transitions)
+			result.push_back(t.get());
+		return result;
+	}
+
+	std::vector<const State*> getFinalStates() const {
+		return finalStates;
+	}
+
+
 
 };
 
@@ -622,6 +662,11 @@ public:
 		// NonTerminals are the States;
 		for (const NonTerminal* nt : nonTerminals){
 			std::string st = nt->getLetter();
+			
+			// starting state already exist
+			if (st == grammar->getStartingSymbolName())
+				continue;
+
 			std::unique_ptr<State> stat = std::make_unique<State>(st);
 			automaton->addState(std::move(stat));
 			//add each nt to states as a state. create new state each time and call function addState();
@@ -668,11 +713,242 @@ public:
 				std::unique_ptr<Transition> transition= std::make_unique<Transition>(fromState, symbolVia, toState);
 				automaton->addTransition(std::move(transition));
 			}
+
+			if (wordTo->getLength() == 0){
+				// A -> ε
+				automaton->setStateAsFinal(fromState);
+				continue;
+			}
 			
 		}
 
 		return automaton;
 	}
+};
+
+class DeterministicAutomaton : public AbstractAutomaton {
+public:
+
+    explicit DeterministicAutomaton(std::unique_ptr<State> start)
+        : AbstractAutomaton(std::move(start))
+    {}
+
+    void addTransition(std::unique_ptr<Transition> transition) override {
+
+        const State* from = transition->getFromState();
+        const Symbol* sym = transition->getSymbol();
+
+        for (const auto& tr : this->transitions) {
+            if (tr->isFromStateAndViaSymbol(from, sym)) {
+                printf("ERROR: DFA cannot have multiple transitions for same state and symbol\n");
+                std::abort();
+            }
+        }
+
+        this->transitions.push_back(std::move(transition));
+    }
+
+    bool accepts(const std::vector<std::unique_ptr<Symbol>> word) const override {
+
+        const State* current = this->startingState;
+
+        for (const auto& symbol : word) {
+
+            const State* next = nullptr;
+
+            for (const auto& tr : this->transitions) {
+                if (tr->isFromStateAndViaSymbol(current, symbol.get())) {
+                    next = tr->getToState();
+                    break;
+                }
+            }
+
+            if (next == nullptr)
+                return false;
+
+            current = next;
+        }
+
+        return this->isFinalState(current);
+    }
+};
+
+class ConverterAutomatonToGrammar {
+public:
+    std::unique_ptr<Grammar> convert(const AbstractAutomaton* automaton) const {
+        // Create starting non-terminal from starting state
+        std::string startName = automaton->getStartingState()->getName();
+        std::unique_ptr<NonTerminal> startNT = std::make_unique<NonTerminal>(startName);
+        std::unique_ptr<Grammar> grammar = std::make_unique<Grammar>(std::move(startNT));
+
+        // Add non-terminals for all other states
+        for (const auto& st : automaton->getStates()) {
+            std::string stName = st->getName();
+            if (stName != startName) {
+                grammar->addNonTerminal(std::make_unique<NonTerminal>(stName));
+            }
+        }
+
+        // Add terminals for alphabet
+        for (const auto& sym : automaton->getAlphabet()) {
+            grammar->addTerminal(std::make_unique<Terminal>(sym->getNameOfSymbol()));
+        }
+
+        // Add productions for transitions (Q -> a P)
+        for (const auto& tr : automaton->getTransitions()) {
+            std::unique_ptr<Word> fromW = std::make_unique<Word>();
+            std::string fromName = tr->getFromState()->getName();
+            const NonTerminal* fromNT = grammar->getNonTerminalByLetter(fromName);
+            fromW->appendLetter(fromNT);
+
+            std::unique_ptr<Word> toW = std::make_unique<Word>();
+            std::string symName = tr->getSymbol()->getNameOfSymbol();
+            const Terminal* symT = grammar->getTerminalByLetter(symName);
+            toW->appendLetter(symT);
+            std::string toName = tr->getToState()->getName();
+            const NonTerminal* toNT = grammar->getNonTerminalByLetter(toName);
+            toW->appendLetter(toNT);
+
+            grammar->addProduction(std::make_unique<Production>(std::move(fromW), std::move(toW)));
+        }
+
+        // Add epsilon productions for final states (F -> ε)
+        for (const State* f : automaton->getFinalStates()) {
+            std::unique_ptr<Word> fromW = std::make_unique<Word>();
+            std::string fName = f->getName();
+            const NonTerminal* fNT = grammar->getNonTerminalByLetter(fName);
+            fromW->appendLetter(fNT);
+
+            std::unique_ptr<Word> toW = std::make_unique<Word>();  // empty for epsilon
+
+            grammar->addProduction(std::make_unique<Production>(std::move(fromW), std::move(toW)));
+        }
+
+        return grammar;
+    }
+};
+
+
+class ConverterNFAToDFA {
+private:
+
+    std::string makeStateName(const std::set<const State*>& states) const {
+        std::string name = "{";
+        bool first = true;
+
+        for (const State* s : states) {
+            if (!first) name += ",";
+            name += s->getName();
+            first = false;
+        }
+
+        name += "}";
+        return name;
+    }
+
+    std::set<const State*> move(
+        const NonDeterministicAutomaton* nfa,
+        const std::set<const State*>& states,
+        const Symbol* symbol
+    ) const {
+
+        std::set<const State*> result;
+
+        for (const State* st : states) {
+            for (const Transition* tr : nfa->getTransitions()) {
+                if (tr->isFromStateAndViaSymbol(st, symbol)) {
+                    result.insert(tr->getToState());
+                }
+            }
+        }
+
+        return result;
+    }
+
+public:
+
+    std::unique_ptr<DeterministicAutomaton>
+    convert(const NonDeterministicAutomaton* nfa) const {
+
+        // starting subset
+        std::set<const State*> startSet;
+        startSet.insert(nfa->getStartingState());
+
+        std::string startName = makeStateName(startSet);
+
+        std::unique_ptr<State> startState =
+            std::make_unique<State>(startName);
+
+        std::unique_ptr<DeterministicAutomaton> dfa =
+            std::make_unique<DeterministicAutomaton>(std::move(startState));
+
+        // copy alphabet
+        for (const Symbol* s : nfa->getAlphabet()) {
+            dfa->addSymbol(std::make_unique<Symbol>(s->getNameOfSymbol()));
+        }
+
+        std::queue<std::set<const State*>> queue;
+        std::set<std::string> visited;
+
+        queue.push(startSet);
+        visited.insert(startName);
+
+        while (!queue.empty()) {
+
+            std::set<const State*> currentSet = queue.front();
+            queue.pop();
+
+            std::string currentName = makeStateName(currentSet);
+            const State* currentState = dfa->getStateByName(currentName);
+
+            // check if final
+            for (const State* s : currentSet) {
+                for (const State* f : nfa->getFinalStates()) {
+                    if (s == f) {
+                        dfa->setStateAsFinal(currentState);
+                    }
+                }
+            }
+
+            // transitions
+            for (const Symbol* sym : nfa->getAlphabet()) {
+
+                std::set<const State*> nextSet = move(nfa, currentSet, sym);
+
+                if (nextSet.empty())
+                    continue;
+
+                std::string nextName = makeStateName(nextSet);
+
+                const State* nextState = dfa->getStateByName(nextName);
+
+                if (nextState == nullptr) {
+
+                    std::unique_ptr<State> newState =
+                        std::make_unique<State>(nextName);
+
+                    nextState = newState.get();
+
+                    dfa->addState(std::move(newState));
+
+                    if (!visited.count(nextName)) {
+                        queue.push(nextSet);
+                        visited.insert(nextName);
+                    }
+                }
+
+                const Symbol* dfaSym =
+                    dfa->getSymbolByName(sym->getNameOfSymbol());
+
+                std::unique_ptr<Transition> tr =
+                    std::make_unique<Transition>(currentState, dfaSym, nextState);
+
+                dfa->addTransition(std::move(tr));
+            }
+        }
+
+        return dfa;
+    }
 };
 
 // TODO:
@@ -695,76 +971,235 @@ F = {q3},
 δ(q3,c) = q3.
 */
 
-int main() {
-	// ----------------------------
-	// Create grammar: S -> aS | b
-	// ----------------------------
+void printAutomaton(const AbstractAutomaton* a){
+    printf("\nStates:\n");
+    for (const State* s : a->getStates()){
+        printf("%s\n", s->getName().c_str());
+    }
 
-	std::unique_ptr<NonTerminal> S = std::make_unique<NonTerminal>("S");
-	Grammar grammar(std::move(S));
+    printf("\nAlphabet:\n");
+    for (const Symbol* s : a->getAlphabet()){
+        printf("%s\n", s->getNameOfSymbol().c_str());
+    }
 
-	grammar.addTerminal(std::make_unique<Terminal>("a"));
-	grammar.addTerminal(std::make_unique<Terminal>("b"));
+    printf("\nTransitions:\n");
+    for (const Transition* t : a->getTransitions()){
+        printf("δ(%s,%s) -> %s\n",
+            t->getFromState()->getName().c_str(),
+            t->getSymbol()->getNameOfSymbol().c_str(),
+            t->getToState()->getName().c_str());
+    }
 
-	// S -> aS
-	{
-		std::unique_ptr<Word> from = std::make_unique<Word>();
-		from->appendLetter(grammar.getStartingSymbol());
+    printf("\nStart: %s\n", a->getStartingState()->getName().c_str());
 
-		std::unique_ptr<Word> to = std::make_unique<Word>();
-		to->appendLetter(grammar.getTerminals()[0]);  // 'a'
-		to->appendLetter(grammar.getStartingSymbol());
+    printf("\nFinal states:\n");
+    for (const State* s : a->getFinalStates()){
+        printf("%s\n", s->getName().c_str());
+    }
+}
 
-		grammar.addProduction(
-			std::make_unique<Production>(std::move(from), std::move(to))
-		);
-	}
 
-	// S -> b
-	{
-		std::unique_ptr<Word> from = std::make_unique<Word>();
-		from->appendLetter(grammar.getStartingSymbol());
+void printGrammar(const Grammar* g){
 
-		std::unique_ptr<Word> to = std::make_unique<Word>();
-		to->appendLetter(grammar.getTerminals()[1]);  // 'b'
+    printf("\nNonTerminals:\n");
+    for (auto nt : g->getNonTerminals()){
+        printf("%s\n", nt->getLetter().c_str());
+    }
 
-		grammar.addProduction(
-			std::make_unique<Production>(std::move(from), std::move(to))
-		);
-	}
+    printf("\nTerminals:\n");
+    for (auto t : g->getTerminals()){
+        printf("%s\n", t->getLetter().c_str());
+    }
 
-	// ----------------------------
-	// Generate few words
-	// ----------------------------
+    printf("\nProductions:\n");
+    for (auto p : g->getProductions()){
+        p->print();
+    }
 
-	printf("Generated words:\n");
+    printf("\nStart symbol: %s\n", g->getStartingSymbol()->getLetter().c_str());
+}
 
-	ValidWordGenerator gen(&grammar);
-	auto words = gen.generate(6);
+void printGeneratedWords(const Grammar* g, int amount = 10){
 
-	for (const auto& w : words) {
-		w->print();
-		printf("\n");
-	}
+    printf("\nGenerated words from grammar:\n");
 
-	// ----------------------------
-	// Convert grammar → automaton
-	// ----------------------------
+    ValidWordGenerator generator(g);
 
-	ConverterGrammarToAutomaton converter;
-	std::unique_ptr<NonDeterministicAutomaton> automaton = converter.convert(&grammar);
+    std::vector<std::unique_ptr<Word>> words = generator.generate(amount);
 
-	// ----------------------------
-	// Test automaton on: ab
-	// ----------------------------
+    int i = 1;
+    for (const auto& w : words){
+        printf("%d: ", i++);
+        w->print();
+        printf("\n");
+    }
 
-	std::vector<std::unique_ptr<Symbol>> testWord;
-	testWord.push_back(std::make_unique<Symbol>("a"));
-	testWord.push_back(std::make_unique<Symbol>("b"));
+}
 
-	bool accepted = automaton->accepts(std::move(testWord));
+std::vector<std::unique_ptr<Word>> generateWords(const Grammar* g, int amount = 10){
 
-	printf("\nTest word: ab -> %s\n", accepted ? "ACCEPT" : "REJECT");
+    printf("\nGenerated words from grammar:\n");
 
-	return 0;
+    ValidWordGenerator generator(g);
+    std::vector<std::unique_ptr<Word>> words = generator.generate(amount);
+
+    int i = 1;
+    for (const auto& w : words){
+        printf("%d: ", i++);
+        w->print();
+        printf("\n");
+    }
+
+    return words;
+}
+
+
+void testWordsOnAutomaton(
+    const AbstractAutomaton* automaton,
+    const std::vector<std::unique_ptr<Word>>& words
+){
+
+    printf("\nTesting words on automaton:\n");
+
+    for (const auto& w : words){
+
+        std::vector<std::unique_ptr<Symbol>> input;
+
+        for (const auto& letter : w->getAllLetters()){
+            input.push_back(std::make_unique<Symbol>(letter->getLetter()));
+        }
+
+        bool accepted = automaton->accepts(std::move(input));
+
+        w->print();
+        printf(" -> %s\n", accepted ? "ACCEPT" : "REJECT");
+    }
+}
+int main(){
+
+    printf("====================================\n");
+    printf("Creating NFA\n");
+    printf("====================================\n");
+
+    std::unique_ptr<State> q0 = std::make_unique<State>("q0");
+
+    std::unique_ptr<NonDeterministicAutomaton> nfa =
+        std::make_unique<NonDeterministicAutomaton>(std::move(q0));
+
+    nfa->addState(std::make_unique<State>("q1"));
+    nfa->addState(std::make_unique<State>("q2"));
+    nfa->addState(std::make_unique<State>("q3"));
+
+    nfa->addSymbol(std::make_unique<Symbol>("a"));
+    nfa->addSymbol(std::make_unique<Symbol>("b"));
+    nfa->addSymbol(std::make_unique<Symbol>("c"));
+
+    const State* q3 = nfa->getStateByName("q3");
+    nfa->setStateAsFinal(q3);
+
+    const State* q0p = nfa->getStateByName("q0");
+    const State* q1 = nfa->getStateByName("q1");
+    const State* q2 = nfa->getStateByName("q2");
+
+    const Symbol* a = nfa->getSymbolByName("a");
+    const Symbol* b = nfa->getSymbolByName("b");
+    const Symbol* c = nfa->getSymbolByName("c");
+
+    nfa->addTransition(std::make_unique<Transition>(q0p,a,q0p));
+    nfa->addTransition(std::make_unique<Transition>(q0p,a,q1));
+    nfa->addTransition(std::make_unique<Transition>(q2,a,q2));
+    nfa->addTransition(std::make_unique<Transition>(q1,b,q2));
+    nfa->addTransition(std::make_unique<Transition>(q2,c,q3));
+    nfa->addTransition(std::make_unique<Transition>(q3,c,q3));
+
+    printAutomaton(nfa.get());
+
+
+
+    printf("\n====================================\n");
+    printf("Checking determinism\n");
+    printf("====================================\n");
+
+    printf("Deterministic? -> %s\n",
+           nfa->isDeterministic() ? "YES" : "NO");
+
+
+
+    printf("\n====================================\n");
+    printf("FA -> Grammar\n");
+    printf("====================================\n");
+
+    ConverterAutomatonToGrammar fa2grammar;
+    std::unique_ptr<Grammar> grammar = fa2grammar.convert(nfa.get());
+
+    printGrammar(grammar.get());
+
+
+
+    printf("\n====================================\n");
+    printf("Generate words from Grammar\n");
+    printf("====================================\n");
+
+    auto words = generateWords(grammar.get(),10);
+
+
+
+    printf("\n====================================\n");
+    printf("Grammar -> Automaton\n");
+    printf("====================================\n");
+
+    ConverterGrammarToAutomaton grammar2fa;
+
+    std::unique_ptr<NonDeterministicAutomaton> autoFromGrammar =
+        grammar2fa.convert(grammar.get());
+
+    printAutomaton(autoFromGrammar.get());
+
+
+
+    printf("\n====================================\n");
+    printf("Testing generated words on Grammar->FA\n");
+    printf("====================================\n");
+
+    testWordsOnAutomaton(autoFromGrammar.get(), words);
+
+
+
+    printf("\n====================================\n");
+    printf("NFA -> DFA\n");
+    printf("====================================\n");
+
+    ConverterNFAToDFA converter;
+
+    std::unique_ptr<DeterministicAutomaton> dfa =
+        converter.convert(nfa.get());
+
+    printAutomaton(dfa.get());
+
+
+
+    printf("\n====================================\n");
+    printf("DFA -> Grammar\n");
+    printf("====================================\n");
+
+    std::unique_ptr<Grammar> grammar2 =
+        fa2grammar.convert(dfa.get());
+
+    printGrammar(grammar2.get());
+
+
+
+    printf("\n====================================\n");
+    printf("Generate words from DFA Grammar\n");
+    printf("====================================\n");
+
+    generateWords(grammar2.get(),10);
+
+
+
+    printf("\n====================================\n");
+    printf("Program finished successfully\n");
+    printf("====================================\n");
+
+    return 0;
 }
