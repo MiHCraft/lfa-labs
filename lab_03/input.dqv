@@ -1,0 +1,48 @@
+# DaQuVa program for customer data quality management
+
+# 1. Database connection
+my db "postgresql://localhost:5432/customers?user=admin&password=secret";
+
+# 2. Function to validate email addresses using an AI tool
+function validateEmail(tableName, threshold):
+    scanned = scan tableName."email" using tool "email_validator";
+    risky = filter scanned where dirty_level > threshold;
+    return risky;
+
+# 3. Function to find potential duplicate customers
+function findDuplicates(tableName, keyColumns, toolName):
+    candidates = findLocalDuplicates tableName columns keyColumns using tool toolName;
+    return candidates;
+
+# 4. Apply email validation to the 'customers' table
+riskyEmails = validateEmail("customers", 70);
+output riskyEmails -> console;
+output riskyEmails -> file "risky_emails.csv";
+
+# 5. Detect duplicate customers using fuzzy matching on name and date of birth
+duplicateCandidates = findDuplicates("customers", ["name", "dob"], "fuzzy_matcher");
+
+# 6. Filter duplicates with high confidence (score >= 80)
+highConfidenceDupes = filter duplicateCandidates where duplicate_score >= 80;
+
+# 7. Merge the high‑confidence duplicates back into the database
+#    (requires allowDanger because it modifies the live table)
+merge highConfidenceDupes -> Here(85) allowDanger;
+
+# 8. Create a summary table for further analysis
+summary = newTable "customer_quality_summary"
+          from riskyEmails
+          addColumns [ duplicate_score, length("email"), "source" ];
+
+# 9. Export the summary
+output summary -> file "summary.csv";
+
+# 10. Another function to clean phone numbers
+function cleanPhoneNumbers(tableName):
+    phoneScan = scan tableName."phone" using tool "phone_normalizer";
+    cleanPhones = filter phoneScan where dirty_level < 10;   # keep only clean ones
+    return cleanPhones;
+
+# 11. Apply phone cleaning and output
+cleanPhones = cleanPhoneNumbers("customers");
+output cleanPhones -> console;
