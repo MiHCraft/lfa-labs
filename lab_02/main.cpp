@@ -586,7 +586,7 @@ const Symbol* AbstractAutomaton::getSymbolByName(std::string name){
 class NonDeterministicAutomaton : public AbstractAutomaton{
 public:
 	explicit NonDeterministicAutomaton(std::unique_ptr<State> start)
-        : AbstractAutomaton(std::move(start))   // ← important: call base constructor
+        : AbstractAutomaton(std::move(start)) 
     {
     }
 
@@ -1078,24 +1078,6 @@ void testWordsOnAutomaton(
         printf(" -> %s\n", accepted ? "ACCEPT" : "REJECT");
     }
 }
-// ===================================================================
-// UPDATED Drawing CLASS - STATIC LAYOUT WITH GRAPHS + TABLES
-// ===================================================================
-// What changed:
-// • NO animation, NO slideshow, NO explanation text
-// • Clean static view:
-//      Left:   NFA Graph
-//      Below:  NFA Transition Table
-//      Right:  DFA Graph
-//      Below:  DFA Transition Table
-// • Tables show:
-//      • Start states with →
-//      • Final states with *
-//      • Empty transitions as {}
-//      • NFA cells can have multiple states (e.g. q0,q1)
-// • Red circles still mark arrow heads
-// • Everything is drawn at once — perfect for studying
-// ===================================================================
 
 class Drawing {
 
