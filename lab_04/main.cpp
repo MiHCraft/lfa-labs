@@ -8,8 +8,13 @@
 #include <fstream>
 #include <cctype>
 #include <stdexcept>
+#include <map>
+#include <cmath>
+#include <algorithm>
 
 using namespace std;
+
+#include <raylib.h>
 
 // ============================================================
 // ==================== YOUR ORIGINAL CODE (unchanged) ====================
@@ -171,10 +176,11 @@ public:
 		std::vector<std::unique_ptr<Word>> seen;
 		std::vector<std::unique_ptr<Word>> result;
 		size_t generated = 0;
+		bool unlimited = (maxWords == 0);
 		auto startWord = std::make_unique<Word>();
 		startWord->appendLetter(grammar->getStartingSymbol());
 		queue.push(std::move(startWord));
-		while (!queue.empty() && generated < maxWords) {
+		while (!queue.empty() && (unlimited || generated < maxWords)) {
 			auto current = std::move(queue.front()); queue.pop();
 			if (alreadySeen(current.get(), seen)) continue;
 			if (!current->containsNonTerminal()) {
@@ -495,13 +501,16 @@ void printGrammar(const Grammar* g) {
 }
 
 void printGeneratedWords(const Grammar* g, int amount = 10) {
-	printf("\nGenerated words from grammar:\n");
 	ValidWordGenerator generator(g);
 	auto words = generator.generate(amount);
 	int i = 1;
 	for (const auto& w : words) {
 		printf("%d: ", i++);
-		w->print();
+		if (w->getLength() == 0) {
+			printf("ε");
+		} else {
+			w->print();
+		}
 		printf("\n");
 	}
 }
@@ -523,12 +532,91 @@ void testWordsOnAutomaton(const AbstractAutomaton* automaton, const std::vector<
 // ====================== AST + PARSER ========================
 // ============================================================
 
+constexpr int kRepeatLimit = 5; // limit for '*' and '+'
+
+enum class TokenType {
+	SYMBOL,
+	LPAREN,
+	RPAREN,
+	OR,
+	STAR,
+	PLUS,
+	OPTIONAL,
+	POWER
+};
+
+struct Token {
+	TokenType type;
+	char value = 0;   // for SYMBOL
+	int number = 0;   // for POWER
+};
+
+std::vector<Token> tokenizeRegex(const std::string& s) {
+	std::vector<Token> tokens;
+	for (size_t i = 0; i < s.size(); ) {
+		char c = s[i];
+		if (isspace(static_cast<unsigned char>(c))) { i++; continue; }
+		switch (c) {
+			case '(' : tokens.push_back({TokenType::LPAREN}); i++; break;
+			case ')' : tokens.push_back({TokenType::RPAREN}); i++; break;
+			case '|' : tokens.push_back({TokenType::OR}); i++; break;
+			case '*' : tokens.push_back({TokenType::STAR}); i++; break;
+			case '+' : tokens.push_back({TokenType::PLUS}); i++; break;
+			case '?' : tokens.push_back({TokenType::OPTIONAL}); i++; break;
+			case '^' : {
+				i++;
+				if (i >= s.size() || !isdigit(static_cast<unsigned char>(s[i]))) {
+					throw runtime_error("Expected number after ^");
+				}
+				int num = 0;
+				while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
+					num = num * 10 + (s[i] - '0');
+					i++;
+				}
+				Token t; t.type = TokenType::POWER; t.number = num;
+				tokens.push_back(t);
+				break;
+			}
+			default: {
+				Token t; t.type = TokenType::SYMBOL; t.value = c;
+				tokens.push_back(t);
+				i++;
+				break;
+			}
+		}
+	}
+	return tokens;
+}
+
+std::string tokenToString(const Token& t) {
+	switch (t.type) {
+		case TokenType::SYMBOL: return std::string("SYMBOL(") + t.value + ")";
+		case TokenType::LPAREN: return "LPAREN";
+		case TokenType::RPAREN: return "RPAREN";
+		case TokenType::OR: return "OR";
+		case TokenType::STAR: return "STAR";
+		case TokenType::PLUS: return "PLUS";
+		case TokenType::OPTIONAL: return "OPTIONAL";
+		case TokenType::POWER: return "POWER(" + std::to_string(t.number) + ")";
+	}
+	return "UNKNOWN";
+}
+
+void printTokens(const std::vector<Token>& tokens) {
+	std::cout << "\nTokens:\n";
+	for (const auto& t : tokens) {
+		std::cout << tokenToString(t) << " ";
+	}
+	std::cout << "\n";
+}
+
 enum class NodeType { SYMBOL, CONCAT, OR, REPEAT, OPTIONAL };
 
 struct Node {
 	NodeType type;
 	char value = 0;
-	int repeat = 0;
+	int minRepeat = 1;
+	int maxRepeat = 1;
 	std::shared_ptr<Node> left, right, child;
 	Node(NodeType t) : type(t) {}
 };
@@ -581,18 +669,20 @@ private:
 		auto node = parse_base();
 		while (true) {
 			if (match('*')) {
-				// Kleene star limited to exactly 5 repetitions (prevents infinite loops in generator)
+				// Kleene star limited to 0..kRepeatLimit repetitions
 				auto p = make_shared<Node>(NodeType::REPEAT);
-				p->child = node; p->repeat = 5; node = p;
+				p->child = node; p->minRepeat = 0; p->maxRepeat = kRepeatLimit; node = p;
 			} else if (match('+')) {
+				// Plus limited to 1..kRepeatLimit repetitions
 				auto p = make_shared<Node>(NodeType::REPEAT);
-				p->child = node; p->repeat = 5; node = p;
+				p->child = node; p->minRepeat = 1; p->maxRepeat = kRepeatLimit; node = p;
 			} else if (match('?')) {
-				auto p = make_shared<Node>(NodeType::OPTIONAL); p->child = node; node = p;
+				auto p = make_shared<Node>(NodeType::REPEAT);
+				p->child = node; p->minRepeat = 0; p->maxRepeat = 1; node = p;
 			} else if (match('^')) {
 				int n = parse_number();
 				auto p = make_shared<Node>(NodeType::REPEAT);
-				p->child = node; p->repeat = n; node = p;
+				p->child = node; p->minRepeat = n; p->maxRepeat = n; node = p;
 			} else break;
 		}
 		return node;
@@ -617,7 +707,14 @@ void print_ast(shared_ptr<Node> node, int depth = 0) {
 		case NodeType::SYMBOL: cout << indent << "SYMBOL(" << node->value << ")\n"; break;
 		case NodeType::CONCAT: cout << indent << "CONCAT\n"; print_ast(node->left, depth+1); print_ast(node->right, depth+1); break;
 		case NodeType::OR: cout << indent << "OR\n"; print_ast(node->left, depth+1); print_ast(node->right, depth+1); break;
-		case NodeType::REPEAT: cout << indent << "REPEAT(^" << node->repeat << ")\n"; print_ast(node->child, depth+1); break;
+		case NodeType::REPEAT:
+			if (node->minRepeat == node->maxRepeat) {
+				cout << indent << "REPEAT(^" << node->minRepeat << ")\n";
+			} else {
+				cout << indent << "REPEAT(" << node->minRepeat << ".." << node->maxRepeat << ")\n";
+			}
+			print_ast(node->child, depth+1);
+			break;
 		case NodeType::OPTIONAL: cout << indent << "OPTIONAL\n"; print_ast(node->child, depth+1); break;
 	}
 }
@@ -666,23 +763,43 @@ std::unique_ptr<NonDeterministicAutomaton> build_nfa_from_ast(shared_ptr<Node> r
 			return {s, e};
 		}
 		if (n->type == NodeType::REPEAT) {
-			int times = n->repeat;
-			if (times == 0) return {nullptr, nullptr};
-			auto [s, e] = self(self, n->child);
-			for (int i = 1; i < times; ++i) {
-				auto [s2, e2] = self(self, n->child);
-				automaton->addTransition(std::make_unique<Transition>(e, automaton->getSymbolByName("ε"), s2));
-				e = e2;
+			int minTimes = n->minRepeat;
+			int maxTimes = n->maxRepeat;
+			const Symbol* eps = automaton->getSymbolByName("ε");
+			const State* start = newState();
+			const State* end = newState();
+
+			if (maxTimes == 0) {
+				automaton->addTransition(std::make_unique<Transition>(start, eps, end));
+				return {start, end};
 			}
-			return {s, e};
+
+			const State* prevEnd = nullptr;
+			for (int i = 1; i <= maxTimes; ++i) {
+				auto [cs, ce] = self(self, n->child);
+				if (i == 1) {
+					automaton->addTransition(std::make_unique<Transition>(start, eps, cs));
+				} else {
+					automaton->addTransition(std::make_unique<Transition>(prevEnd, eps, cs));
+				}
+				if (i >= minTimes) {
+					automaton->addTransition(std::make_unique<Transition>(ce, eps, end));
+				}
+				prevEnd = ce;
+			}
+			if (minTimes == 0) {
+				automaton->addTransition(std::make_unique<Transition>(start, eps, end));
+			}
+			return {start, end};
 		}
 		if (n->type == NodeType::OPTIONAL) {
+			const Symbol* eps = automaton->getSymbolByName("ε");
 			const State* s = newState();
 			const State* e = newState();
 			auto [s1, e1] = self(self, n->child);
-			automaton->addTransition(std::make_unique<Transition>(s, automaton->getSymbolByName("ε"), s1));
-			automaton->addTransition(std::make_unique<Transition>(s, automaton->getSymbolByName("ε"), e));
-			automaton->addTransition(std::make_unique<Transition>(e1, automaton->getSymbolByName("ε"), e));
+			automaton->addTransition(std::make_unique<Transition>(s, eps, s1));
+			automaton->addTransition(std::make_unique<Transition>(s, eps, e));
+			automaton->addTransition(std::make_unique<Transition>(e1, eps, e));
 			return {s, e};
 		}
 		return {nullptr, nullptr};
@@ -701,6 +818,154 @@ std::unique_ptr<NonDeterministicAutomaton> build_nfa_from_ast(shared_ptr<Node> r
 }
 
 // ============================================================
+// =================== DFA VISUALIZATION ======================
+// ============================================================
+
+struct DfaSlide {
+	std::string regex;
+	std::unique_ptr<DeterministicAutomaton> dfa;
+};
+
+static Vector2 v2_add(Vector2 a, Vector2 b) { return {a.x + b.x, a.y + b.y}; }
+static Vector2 v2_sub(Vector2 a, Vector2 b) { return {a.x - b.x, a.y - b.y}; }
+static Vector2 v2_scale(Vector2 v, float s) { return {v.x * s, v.y * s}; }
+static float v2_len(Vector2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
+static Vector2 v2_norm(Vector2 v) { float l = v2_len(v); return (l > 0.0001f) ? v2_scale(v, 1.0f / l) : Vector2{0.0f, 0.0f}; }
+static Vector2 v2_perp(Vector2 v) { return {-v.y, v.x}; }
+
+static std::vector<Vector2> layoutCircle(int count, float radius, Vector2 center) {
+	std::vector<Vector2> pos;
+	if (count <= 0) return pos;
+	pos.resize(count);
+	float angleStep = 2.0f * PI / static_cast<float>(count);
+	float startAngle = -PI / 2.0f;
+	for (int i = 0; i < count; ++i) {
+		float ang = startAngle + angleStep * i;
+		pos[i] = {center.x + radius * std::cos(ang), center.y + radius * std::sin(ang)};
+	}
+	return pos;
+}
+
+static void drawArrow(Vector2 start, Vector2 end, float thickness, Color color) {
+	DrawLineEx(start, end, thickness, color);
+	Vector2 dir = v2_norm(v2_sub(end, start));
+	Vector2 perp = v2_perp(dir);
+	float arrowSize = 10.0f;
+	Vector2 tip = end;
+	Vector2 left = v2_add(v2_add(tip, v2_scale(dir, -arrowSize)), v2_scale(perp, arrowSize * 0.5f));
+	Vector2 right = v2_add(v2_add(tip, v2_scale(dir, -arrowSize)), v2_scale(perp, -arrowSize * 0.5f));
+	DrawTriangle(tip, left, right, color);
+}
+
+static std::string shortenName(const std::string& name, size_t maxLen = 10) {
+	if (name.size() <= maxLen) return name;
+	return name.substr(0, maxLen - 2) + "..";
+}
+
+static void drawDfaSlide(const DeterministicAutomaton* dfa, const std::string& regex, int index, int total) {
+	const int screenW = GetScreenWidth();
+	const int screenH = GetScreenHeight();
+	const float stateRadius = 32.0f;
+	const float margin = 90.0f;
+	const float radius = std::min(screenW, screenH) * 0.5f - margin;
+	Vector2 center = {screenW * 0.5f, screenH * 0.55f};
+
+	auto states = dfa->getStates();
+	int n = static_cast<int>(states.size());
+	if (n == 0) return;
+
+	auto positions = layoutCircle(n, radius, center);
+	std::map<const State*, int> indexOf;
+	for (int i = 0; i < n; ++i) indexOf[states[i]] = i;
+
+	std::set<const State*> finalSet;
+	for (const auto* s : dfa->getFinalStates()) finalSet.insert(s);
+
+	std::map<std::pair<int, int>, std::set<std::string>> edgeLabels;
+	for (const Transition* tr : dfa->getTransitions()) {
+		int from = indexOf[tr->getFromState()];
+		int to = indexOf[tr->getToState()];
+		edgeLabels[{from, to}].insert(tr->getSymbol()->getNameOfSymbol());
+	}
+
+	// Header
+	std::string header = "DFA " + std::to_string(index + 1) + " / " + std::to_string(total);
+	DrawText(header.c_str(), 30, 20, 24, DARKGRAY);
+	std::string regexLine = "Regex: " + regex;
+	DrawText(regexLine.c_str(), 30, 50, 20, DARKGRAY);
+	DrawText("Press SPACE for next (Backspace for previous)", 30, 75, 16, GRAY);
+
+	// Edges
+	for (const auto& kv : edgeLabels) {
+		int from = kv.first.first;
+		int to = kv.first.second;
+		std::string label;
+		for (const auto& s : kv.second) {
+			if (!label.empty()) label += ",";
+			label += s;
+		}
+		Vector2 pFrom = positions[from];
+		Vector2 pTo = positions[to];
+		if (from == to) {
+			float loopR = stateRadius * 0.9f;
+			Vector2 loopCenter = {pFrom.x, pFrom.y - stateRadius - loopR * 0.5f};
+			DrawCircleLines(loopCenter.x, loopCenter.y, loopR, GRAY);
+			DrawText(label.c_str(), loopCenter.x - MeasureText(label.c_str(), 16) / 2, loopCenter.y - loopR - 18, 16, GRAY);
+			continue;
+		}
+		Vector2 dir = v2_norm(v2_sub(pTo, pFrom));
+		Vector2 start = v2_add(pFrom, v2_scale(dir, stateRadius));
+		Vector2 end = v2_add(pTo, v2_scale(dir, -stateRadius));
+		drawArrow(start, end, 2.0f, GRAY);
+		Vector2 mid = v2_add(start, v2_scale(v2_sub(end, start), 0.5f));
+		Vector2 offset = v2_scale(v2_perp(dir), 14.0f);
+		Vector2 labelPos = v2_add(mid, offset);
+		DrawText(label.c_str(), labelPos.x - MeasureText(label.c_str(), 16) / 2, labelPos.y - 8, 16, GRAY);
+	}
+
+	// States
+	for (int i = 0; i < n; ++i) {
+		Vector2 p = positions[i];
+		bool isFinal = finalSet.count(states[i]) > 0;
+		DrawCircleV(p, stateRadius, RAYWHITE);
+		DrawCircleLines(p.x, p.y, stateRadius, BLACK);
+		if (isFinal) DrawCircleLines(p.x, p.y, stateRadius - 5, BLACK);
+
+		std::string label = "S" + std::to_string(i);
+		int labelW = MeasureText(label.c_str(), 18);
+		DrawText(label.c_str(), p.x - labelW / 2, p.y - 10, 18, BLACK);
+
+		std::string orig = shortenName(states[i]->getName());
+		int origW = MeasureText(orig.c_str(), 14);
+		DrawText(orig.c_str(), p.x - origW / 2, p.y + 12, 14, DARKGRAY);
+	}
+
+	// Start arrow
+	const State* startState = dfa->getStartingState();
+	int startIdx = indexOf[startState];
+	Vector2 pStart = positions[startIdx];
+	Vector2 from = {pStart.x - stateRadius - 40.0f, pStart.y};
+	Vector2 to = {pStart.x - stateRadius, pStart.y};
+	drawArrow(from, to, 2.0f, BLACK);
+}
+
+static void runDfaSlideshow(const std::vector<DfaSlide>& slides) {
+	if (slides.empty()) return;
+	InitWindow(1200, 800, "DFA Slideshow");
+	SetTargetFPS(60);
+	int index = 0;
+	while (!WindowShouldClose()) {
+		if (IsKeyPressed(KEY_SPACE) && index < static_cast<int>(slides.size()) - 1) index++;
+		if (IsKeyPressed(KEY_BACKSPACE) && index > 0) index--;
+		BeginDrawing();
+		ClearBackground(RAYWHITE);
+		drawDfaSlide(slides[index].dfa.get(), slides[index].regex, index, static_cast<int>(slides.size()));
+		EndDrawing();
+	}
+	CloseWindow();
+}
+
+// ============================================================
 // ====================== MAIN ======================
 // ============================================================
 
@@ -713,6 +978,7 @@ int main() {
 
 	string regex;
 	int line_num = 1;
+	std::vector<DfaSlide> slides;
 
 	while (getline(fin, regex)) {
 		if (regex.empty()) continue;
@@ -722,6 +988,9 @@ int main() {
 		cout << "============================================================\n";
 
 		try {
+			auto tokens = tokenizeRegex(regex);
+			printTokens(tokens);
+
 			Parser parser(regex);
 			auto ast = parser.parse();
 
@@ -730,14 +999,8 @@ int main() {
 
 			auto nfa = build_nfa_from_ast(ast);
 
-			cout << "\nNFA (Thompson construction with ε-transitions):\n";
-			printAutomaton(nfa.get());
-
 			ConverterNFAToDFA nfa2dfa;
 			auto dfa = nfa2dfa.convert(nfa.get());
-
-			cout << "\nDFA (after subset construction):\n";
-			printAutomaton(dfa.get());
 
 			ConverterAutomatonToGrammar fa2grammar;
 			auto grammar = fa2grammar.convert(dfa.get());
@@ -745,12 +1008,13 @@ int main() {
 			cout << "\nRegular Grammar:\n";
 			printGrammar(grammar.get());
 
-			cout << "\nGenerated valid words (up to 10):\n";
-			printGeneratedWords(grammar.get(), 10);
+			cout << "\nGenerated valid words (all with repeat limit " << kRepeatLimit << "):\n";
+			printGeneratedWords(grammar.get(), 0);
 
-			ValidWordGenerator gen(grammar.get());
-			auto words = gen.generate(10);
-			testWordsOnAutomaton(dfa.get(), words);
+			DfaSlide slide;
+			slide.regex = regex;
+			slide.dfa = std::move(dfa);
+			slides.push_back(std::move(slide));
 
 			cout << "\nPipeline complete for this regex.\n";
 
@@ -763,5 +1027,6 @@ int main() {
 	}
 
 	cout << "\nAll regexes from input.txt processed successfully.\n";
+	runDfaSlideshow(slides);
 	return 0;
 }
