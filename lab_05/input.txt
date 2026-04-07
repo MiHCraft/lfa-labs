@@ -1,0 +1,6 @@
+# Variant 20 grammar (input format: A -> aB | bA | epsilon)
+S -> aB | bA | A
+A -> B | Sa | bBA | b
+B -> b | bS | aD | epsilon
+D -> AA
+C -> Ba
