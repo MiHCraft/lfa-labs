@@ -119,5 +119,27 @@ C -> Ba
 
 ## Results
 
-The program prints the grammar after every step and finishes with the final **Chomsky Normal Form**. This makes it easy to verify each transformation and see exactly how the grammar is normalized.
+The program prints the grammar after every step and finishes with the final **Chomsky Normal Form**. This makes it easy to verify each transformation and see exactly how the grammar is normalized. For Variant 20, the final CNF produced by the program is:
 
+```
+5) Chomsky Normal Form
+Start: S0
+Vn = { A, B, D, S, S0, T_a, T_b, X1, X2, X3 }
+Vt = { a, b }
+P:
+  A -> a | S T_a | b | T_b A | T_b B | T_b X1 | T_b S | T_a D
+  B -> b | T_b S | a | T_a D
+  D -> a | S T_a | b | T_b A | T_b B | T_b X2 | T_b S | T_a D | A A
+  S -> a | S T_a | b | T_b A | T_b B | T_b X3 | T_b S | T_a D | T_a B
+  S0 -> a | S T_a | b | T_b A | T_b B | T_b X3 | T_b S | T_a D | T_a B
+  T_a -> a
+  T_b -> b
+  X1 -> B A
+  X2 -> B A
+  X3 -> B A
+```
+
+Key observations:
+- The new start symbol `S0` was introduced to preserve epsilon if needed while keeping CNF constraints.
+- Terminals that appear in longer productions are replaced by `T_a` and `T_b`, which expand to `a` and `b`.
+- All productions are either `A -> BC` or `A -> a`, which satisfies the CNF definition.
