@@ -1,0 +1,35 @@
+# DaQuVa program for customer data quality management
+
+my db "postgresql://localhost:5432/customers?user=admin&password=secret";
+
+function validateEmail(tableName, threshold):
+    scanned = scan tableName."email" using tool "email_validator";
+    risky = filter scanned where dirty_level > threshold;
+    return risky;
+
+function findDuplicates(tableName, keyColumns, toolName):
+    candidates = findLocalDuplicates tableName columns keyColumns using tool toolName;
+    return candidates;
+
+riskyEmails = validateEmail("customers", 70);
+output riskyEmails -> console;
+output riskyEmails -> file "risky_emails.csv";
+
+duplicateCandidates = findDuplicates("customers", ["name", "dob"], "fuzzy_matcher");
+highConfidenceDupes = filter duplicateCandidates where duplicate_score >= 80;
+
+merge highConfidenceDupes -> Here(85) allowDanger;
+
+summary = newTable "customer_quality_summary"
+          from riskyEmails
+          addColumns [ duplicate_score, length("email"), "source" ];
+
+output summary -> file "summary.csv";
+
+function cleanPhoneNumbers(tableName):
+    phoneScan = scan tableName."phone" using tool "phone_normalizer";
+    cleanPhones = filter phoneScan where dirty_level < 10;
+    return cleanPhones;
+
+cleanPhones = cleanPhoneNumbers("customers");
+output cleanPhones -> console;
